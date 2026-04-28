@@ -2707,8 +2707,11 @@ impl InfrastructureMap {
     /// Must be called at runtime (dev/prod mode) rather than build time to avoid
     /// baking credentials into Docker images.
     pub fn resolve_runtime_credentials_from_env(&mut self) -> Result<(), String> {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionarySource, ExternalDictionarySource,
+        };
         use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-        use crate::utilities::secrets::resolve_optional_runtime_env;
+        use crate::utilities::secrets::{resolve_optional_runtime_env, resolve_runtime_env};
 
         for table in self.tables.values_mut() {
             let mut should_recalc_hash = false;
@@ -2821,6 +2824,123 @@ impl InfrastructureMap {
                     "Recalculated table_settings_hash for table '{}' after credential resolution",
                     table.name
                 );
+            }
+        }
+
+        // Resolve runtime environment variables in dictionary external source credentials.
+        // Named collections don't work on ClickHouse Cloud, so user/password must be specified
+        // inline. mooseRuntimeEnv.get() lets users avoid hardcoding credentials.
+        for dict in self.olap_dictionaries.values_mut() {
+            if let DictionarySource::External(ref mut ext) = dict.source {
+                match ext {
+                    ExternalDictionarySource::ClickHouse(s) => {
+                        s.user = resolve_runtime_env(&s.user).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'user': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        s.password = resolve_runtime_env(&s.password).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'password': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        tracing::debug!(
+                            "Resolved ClickHouse credentials for dictionary '{}' at runtime",
+                            dict.name
+                        );
+                    }
+                    ExternalDictionarySource::Mysql(s) => {
+                        s.user = resolve_runtime_env(&s.user).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'user': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        s.password = resolve_runtime_env(&s.password).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'password': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        tracing::debug!(
+                            "Resolved MySQL credentials for dictionary '{}' at runtime",
+                            dict.name
+                        );
+                    }
+                    ExternalDictionarySource::Postgresql(s) => {
+                        s.user = resolve_runtime_env(&s.user).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'user': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        s.password = resolve_runtime_env(&s.password).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'password': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        tracing::debug!(
+                            "Resolved PostgreSQL credentials for dictionary '{}' at runtime",
+                            dict.name
+                        );
+                    }
+                    ExternalDictionarySource::Redis(s) => {
+                        s.password = resolve_optional_runtime_env(&s.password).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'password': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        tracing::debug!(
+                            "Resolved Redis credentials for dictionary '{}' at runtime",
+                            dict.name
+                        );
+                    }
+                    ExternalDictionarySource::Mongodb(s) => {
+                        s.user = resolve_runtime_env(&s.user).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'user': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        s.password = resolve_runtime_env(&s.password).map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for dictionary '{}' field 'password': {}",
+                                dict.name, e
+                            )
+                        })?;
+                        tracing::debug!(
+                            "Resolved MongoDB credentials for dictionary '{}' at runtime",
+                            dict.name
+                        );
+                    }
+                    ExternalDictionarySource::S3(s) => {
+                        s.access_key_id =
+                            resolve_optional_runtime_env(&s.access_key_id).map_err(|e| {
+                                format!(
+                                    "Failed to resolve runtime environment variable for dictionary '{}' field 'accessKeyId': {}",
+                                    dict.name, e
+                                )
+                            })?;
+                        s.secret_access_key =
+                            resolve_optional_runtime_env(&s.secret_access_key).map_err(|e| {
+                                format!(
+                                    "Failed to resolve runtime environment variable for dictionary '{}' field 'secretAccessKey': {}",
+                                    dict.name, e
+                                )
+                            })?;
+                        tracing::debug!(
+                            "Resolved S3 credentials for dictionary '{}' at runtime",
+                            dict.name
+                        );
+                    }
+                    ExternalDictionarySource::Http(_) | ExternalDictionarySource::Executable(_) => {
+                        // No credentials to resolve
+                    }
+                }
             }
         }
 
@@ -3981,11 +4101,15 @@ fn topics_equal_ignore_metadata(a: &Topic, b: &Topic) -> bool {
 ///
 /// # Returns
 /// `true` if the dictionaries are equal ignoring metadata, `false` otherwise
-/// Masks credential-bearing fields in a dictionary external source in-place.
+/// Masks secret credential fields in a dictionary external source in-place.
 ///
-/// Replaces passwords, keys, and tokens with [`CREDENTIAL_PLACEHOLDER`] so that
-/// round-tripped dictionaries (whose credentials are masked before proto/Redis
-/// persistence) compare equal to their plaintext counterparts.
+/// Replaces **passwords, keys, and tokens** with [`CREDENTIAL_PLACEHOLDER`] so that
+/// round-tripped dictionaries (whose secrets are masked before JSON persistence)
+/// compare equal to their plaintext counterparts.
+///
+/// **Usernames are intentionally NOT masked** — they are identifiers, not secrets,
+/// and must remain in plaintext so that `dicts_equal_ignore_metadata` can detect
+/// username changes and trigger a dictionary rebuild.
 fn mask_dict_credentials(dict: &mut OlapDictionary) {
     use crate::infrastructure::olap::clickhouse::dictionary::{
         DictionarySource, ExternalDictionarySource,
@@ -8629,6 +8753,151 @@ mod diff_orchestration_worker_tests {
     }
 
     #[test]
+    fn test_mask_credentials_masks_dict_password_not_user() {
+        // Regression: mask_credentials_for_json_export() must scrub `password` but
+        // leave `user` (username) in plaintext. Usernames are identifiers, not secrets,
+        // and must be preserved so that username changes are detectable by
+        // dicts_equal_ignore_metadata().
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryClickHouseSource, DictionaryColumn, DictionaryLayout, DictionaryLifetime,
+            DictionaryMongoDbSource, DictionaryMysqlSource, DictionaryPostgresqlSource,
+            DictionarySource, ExternalDictionarySource,
+        };
+
+        let make_dict = |name: &str, source: ExternalDictionarySource| -> OlapDictionary {
+            OlapDictionary {
+                name: name.to_string(),
+                database: None,
+                cluster_name: None,
+                source: DictionarySource::External(source),
+                primary_key: vec!["id".to_string()],
+                columns: vec![DictionaryColumn {
+                    name: "id".to_string(),
+                    type_string: "UInt64".to_string(),
+                    default_value: None,
+                    expression: None,
+                    is_injective: None,
+                    is_hierarchical: None,
+                    is_object_id: None,
+                    comment: None,
+                }],
+                layout: DictionaryLayout::Hashed {
+                    initial_array_size: None,
+                    max_load_factor: None,
+                },
+                lifetime: DictionaryLifetime::Single { seconds: 3600 },
+                invalidate_query: None,
+                settings: std::collections::HashMap::new(),
+                comment: None,
+                life_cycle: LifeCycle::FullyManaged,
+                version: None,
+                metadata: None,
+            }
+        };
+
+        let mut map = InfrastructureMap::default();
+        map.olap_dictionaries.insert(
+            "ch".to_string(),
+            make_dict(
+                "ch",
+                ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
+                    host: "host".to_string(),
+                    port: 9000,
+                    user: "admin".to_string(),
+                    password: "s3cr3t".to_string(),
+                    db: "db".to_string(),
+                    table: "t".to_string(),
+                    query: None,
+                    where_clause: None,
+                    invalidate_query: None,
+                }),
+            ),
+        );
+        map.olap_dictionaries.insert(
+            "mysql".to_string(),
+            make_dict(
+                "mysql",
+                ExternalDictionarySource::Mysql(DictionaryMysqlSource {
+                    host: "host".to_string(),
+                    port: 3306,
+                    user: "admin".to_string(),
+                    password: "s3cr3t".to_string(),
+                    db: "db".to_string(),
+                    table: "t".to_string(),
+                    query: None,
+                    where_clause: None,
+                    invalidate_query: None,
+                }),
+            ),
+        );
+        map.olap_dictionaries.insert(
+            "pg".to_string(),
+            make_dict(
+                "pg",
+                ExternalDictionarySource::Postgresql(DictionaryPostgresqlSource {
+                    host: "host".to_string(),
+                    port: 5432,
+                    user: "admin".to_string(),
+                    password: "s3cr3t".to_string(),
+                    db: "db".to_string(),
+                    table: "t".to_string(),
+                    query: None,
+                    where_clause: None,
+                    invalidate_query: None,
+                }),
+            ),
+        );
+        map.olap_dictionaries.insert(
+            "mongo".to_string(),
+            make_dict(
+                "mongo",
+                ExternalDictionarySource::Mongodb(DictionaryMongoDbSource {
+                    host: "host".to_string(),
+                    port: 27017,
+                    user: "admin".to_string(),
+                    password: "s3cr3t".to_string(),
+                    db: "db".to_string(),
+                    collection: "coll".to_string(),
+                }),
+            ),
+        );
+
+        let masked = map.mask_credentials_for_json_export();
+
+        let check = |name: &str| {
+            let d = masked.olap_dictionaries.get(name).unwrap();
+            if let DictionarySource::External(ref ext) = d.source {
+                match ext {
+                    ExternalDictionarySource::ClickHouse(s) => {
+                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
+                        assert_eq!(s.password, "[HIDDEN]", "{name}: password must be masked");
+                    }
+                    ExternalDictionarySource::Mysql(s) => {
+                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
+                        assert_eq!(s.password, "[HIDDEN]", "{name}: password must be masked");
+                    }
+                    ExternalDictionarySource::Postgresql(s) => {
+                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
+                        assert_eq!(s.password, "[HIDDEN]", "{name}: password must be masked");
+                    }
+                    ExternalDictionarySource::Mongodb(s) => {
+                        assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
+                        assert_eq!(s.password, "[HIDDEN]", "{name}: password must be masked");
+                    }
+                    _ => panic!("{name}: unexpected source variant"),
+                }
+            } else {
+                panic!("{name}: expected External source");
+            }
+        };
+
+        check("ch");
+        check("mysql");
+        check("pg");
+        check("mongo");
+    }
+
+    #[test]
     fn test_ignore_string_low_cardinality_differences_integration() {
         use crate::framework::core::infrastructure::table::{
             Column, ColumnType, IntType, OrderBy, Table,
@@ -10325,6 +10594,71 @@ mod diff_dictionaries_metadata_tests {
             "expected an OlapDictionary Updated change"
         );
     }
+
+    /// Regression: a username change in an external-source dict must be detectable.
+    ///
+    /// `dicts_equal_ignore_metadata` must NOT mask the `user` field — usernames are
+    /// identifiers, not secrets. Masking them would make "alice" → "bob" changes
+    /// invisible, preventing the dictionary from ever being rebuilt with the new user.
+    #[test]
+    fn test_diff_dictionaries_detects_username_change() {
+        use crate::infrastructure::olap::clickhouse::dictionary::{
+            DictionaryClickHouseSource, ExternalDictionarySource,
+        };
+
+        let make_ext_dict = |user: &str| -> OlapDictionary {
+            OlapDictionary {
+                source: DictionarySource::External(ExternalDictionarySource::ClickHouse(
+                    DictionaryClickHouseSource {
+                        host: "ch.example.com".to_string(),
+                        port: 9000,
+                        user: user.to_string(),
+                        password: "s3cr3t".to_string(),
+                        db: "mydb".to_string(),
+                        table: "users".to_string(),
+                        query: None,
+                        where_clause: None,
+                        invalidate_query: None,
+                    },
+                )),
+                ..simple_dict()
+            }
+        };
+
+        let current_dict = make_ext_dict("alice");
+        let target_dict = make_ext_dict("bob");
+
+        let dict_id = current_dict.id("local");
+        let mut current = HashMap::new();
+        current.insert(dict_id.clone(), current_dict);
+        let mut target = HashMap::new();
+        target.insert(dict_id, target_dict);
+
+        let mut olap_changes = vec![];
+        let mut filtered_changes = vec![];
+        InfrastructureMap::diff_dictionaries(
+            &current,
+            &target,
+            "local",
+            &mut olap_changes,
+            &mut filtered_changes,
+            false,
+        );
+
+        assert_eq!(
+            olap_changes.len(),
+            1,
+            "username change must produce exactly one update, got: {:?}",
+            olap_changes
+        );
+        assert!(
+            matches!(
+                &olap_changes[0],
+                OlapChange::OlapDictionary(Change::Updated { .. })
+            ),
+            "expected an OlapDictionary Updated change for username change"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -10706,9 +11040,9 @@ mod mask_credentials_dictionary_tests {
         }
     }
 
-    /// `mask_credentials_for_json_export` must mask passwords in ClickHouse external
-    /// source dictionaries while leaving the username as-is (by design — only passwords
-    /// are considered sensitive enough to mask in persisted JSON files).
+    /// `mask_credentials_for_json_export` must mask the password but leave the username
+    /// in plaintext. Usernames are identifiers, not secrets; masking them would prevent
+    /// `dicts_equal_ignore_metadata` from detecting username changes.
     #[test]
     fn test_mask_credentials_for_json_export_clickhouse_dict() {
         let source = DictionarySource::External(ExternalDictionarySource::ClickHouse(
@@ -10739,7 +11073,6 @@ mod mask_credentials_dictionary_tests {
                 s.password, CREDENTIAL_PLACEHOLDER,
                 "ClickHouse dict password must be masked"
             );
-            // username is intentionally NOT masked in JSON export (only password)
             assert_eq!(s.user, "admin", "ClickHouse dict user must NOT be masked");
         } else {
             panic!("Expected ClickHouse external source");
@@ -10831,5 +11164,530 @@ mod mask_credentials_dictionary_tests {
             masked.olap_dictionaries[&dict_id].source, source,
             "Table-source dict must not be modified by credential masking"
         );
+    }
+}
+
+#[cfg(test)]
+mod dictionary_runtime_env_tests {
+    use super::*;
+    use crate::infrastructure::olap::clickhouse::dictionary::{
+        DictionaryClickHouseSource, DictionaryColumn, DictionaryLayout, DictionaryLifetime,
+        DictionaryMongoDbSource, DictionaryMysqlSource, DictionaryPostgresqlSource,
+        DictionaryRedisSource, DictionaryS3Source, DictionarySource, ExternalDictionarySource,
+    };
+    use serial_test::serial;
+    use std::collections::HashMap;
+
+    fn base_dict(source: ExternalDictionarySource) -> OlapDictionary {
+        OlapDictionary {
+            name: "test_dict".to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::External(source),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "id".to_string(),
+                type_string: "UInt64".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::default(),
+            version: None,
+            metadata: None,
+        }
+    }
+
+    fn make_infra_map(dict: OlapDictionary) -> InfrastructureMap {
+        let dict_id = dict.id("local");
+        let mut map = InfrastructureMap {
+            default_database: "local".to_string(),
+            ..Default::default()
+        };
+        map.olap_dictionaries.insert(dict_id, dict);
+        map
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_dictionary_clickhouse_credentials() {
+        std::env::set_var("DICT_CH_USER", "resolved_user");
+        std::env::set_var("DICT_CH_PASS", "resolved_pass");
+
+        let source = ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
+            host: "localhost".to_string(),
+            port: 9000,
+            user: "__MOOSE_RUNTIME_ENV__:DICT_CH_USER".to_string(),
+            password: "__MOOSE_RUNTIME_ENV__:DICT_CH_PASS".to_string(),
+            db: "default".to_string(),
+            table: "src".to_string(),
+            query: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::ClickHouse(s)) = &dict.source {
+            assert_eq!(s.user, "resolved_user");
+            assert_eq!(s.password, "resolved_pass");
+        } else {
+            panic!("Expected ClickHouse source");
+        }
+
+        std::env::remove_var("DICT_CH_USER");
+        std::env::remove_var("DICT_CH_PASS");
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_dictionary_mysql_credentials() {
+        std::env::set_var("DICT_MYSQL_USER", "mysql_user");
+        std::env::set_var("DICT_MYSQL_PASS", "mysql_pass");
+
+        let source = ExternalDictionarySource::Mysql(DictionaryMysqlSource {
+            host: "localhost".to_string(),
+            port: 3306,
+            user: "__MOOSE_RUNTIME_ENV__:DICT_MYSQL_USER".to_string(),
+            password: "__MOOSE_RUNTIME_ENV__:DICT_MYSQL_PASS".to_string(),
+            db: "mydb".to_string(),
+            table: "mytable".to_string(),
+            query: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::Mysql(s)) = &dict.source {
+            assert_eq!(s.user, "mysql_user");
+            assert_eq!(s.password, "mysql_pass");
+        } else {
+            panic!("Expected MySQL source");
+        }
+
+        std::env::remove_var("DICT_MYSQL_USER");
+        std::env::remove_var("DICT_MYSQL_PASS");
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_dictionary_postgresql_credentials() {
+        std::env::set_var("DICT_PG_USER", "pg_user");
+        std::env::set_var("DICT_PG_PASS", "pg_pass");
+
+        let source = ExternalDictionarySource::Postgresql(DictionaryPostgresqlSource {
+            host: "localhost".to_string(),
+            port: 5432,
+            user: "__MOOSE_RUNTIME_ENV__:DICT_PG_USER".to_string(),
+            password: "__MOOSE_RUNTIME_ENV__:DICT_PG_PASS".to_string(),
+            db: "mydb".to_string(),
+            table: "mytable".to_string(),
+            query: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::Postgresql(s)) = &dict.source {
+            assert_eq!(s.user, "pg_user");
+            assert_eq!(s.password, "pg_pass");
+        } else {
+            panic!("Expected PostgreSQL source");
+        }
+
+        std::env::remove_var("DICT_PG_USER");
+        std::env::remove_var("DICT_PG_PASS");
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_dictionary_redis_credentials() {
+        std::env::set_var("DICT_REDIS_PASS", "redis_pass");
+
+        let source = ExternalDictionarySource::Redis(DictionaryRedisSource {
+            host: "localhost".to_string(),
+            port: 6379,
+            password: Some("__MOOSE_RUNTIME_ENV__:DICT_REDIS_PASS".to_string()),
+            db_index: None,
+            storage_type: "simple".to_string(),
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::Redis(s)) = &dict.source {
+            assert_eq!(s.password, Some("redis_pass".to_string()));
+        } else {
+            panic!("Expected Redis source");
+        }
+
+        std::env::remove_var("DICT_REDIS_PASS");
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_dictionary_mongodb_credentials() {
+        std::env::set_var("DICT_MONGO_USER", "mongo_user");
+        std::env::set_var("DICT_MONGO_PASS", "mongo_pass");
+
+        let source = ExternalDictionarySource::Mongodb(DictionaryMongoDbSource {
+            host: "localhost".to_string(),
+            port: 27017,
+            user: "__MOOSE_RUNTIME_ENV__:DICT_MONGO_USER".to_string(),
+            password: "__MOOSE_RUNTIME_ENV__:DICT_MONGO_PASS".to_string(),
+            db: "mydb".to_string(),
+            collection: "mycol".to_string(),
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::Mongodb(s)) = &dict.source {
+            assert_eq!(s.user, "mongo_user");
+            assert_eq!(s.password, "mongo_pass");
+        } else {
+            panic!("Expected MongoDB source");
+        }
+
+        std::env::remove_var("DICT_MONGO_USER");
+        std::env::remove_var("DICT_MONGO_PASS");
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_dictionary_s3_credentials() {
+        std::env::set_var("DICT_S3_KEY_ID", "s3_key_id");
+        std::env::set_var("DICT_S3_SECRET", "s3_secret");
+
+        let source = ExternalDictionarySource::S3(DictionaryS3Source {
+            url: "s3://bucket/data.csv".to_string(),
+            format: "CSV".to_string(),
+            access_key_id: Some("__MOOSE_RUNTIME_ENV__:DICT_S3_KEY_ID".to_string()),
+            secret_access_key: Some("__MOOSE_RUNTIME_ENV__:DICT_S3_SECRET".to_string()),
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::S3(s)) = &dict.source {
+            assert_eq!(s.access_key_id, Some("s3_key_id".to_string()));
+            assert_eq!(s.secret_access_key, Some("s3_secret".to_string()));
+        } else {
+            panic!("Expected S3 source");
+        }
+
+        std::env::remove_var("DICT_S3_KEY_ID");
+        std::env::remove_var("DICT_S3_SECRET");
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_dictionary_missing_env_var_returns_error() {
+        std::env::remove_var("DICT_MISSING_VAR");
+
+        let source = ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
+            host: "localhost".to_string(),
+            port: 9000,
+            user: "__MOOSE_RUNTIME_ENV__:DICT_MISSING_VAR".to_string(),
+            password: "static_pass".to_string(),
+            db: "default".to_string(),
+            table: "src".to_string(),
+            query: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+        let mut map = make_infra_map(base_dict(source));
+        let result = map.resolve_runtime_credentials_from_env();
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("DICT_MISSING_VAR"),
+            "Error message should mention the missing variable, got: {err}"
+        );
+        assert!(
+            err.contains("test_dict"),
+            "Error message should mention the dictionary name, got: {err}"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_dictionary_static_credentials_passthrough() {
+        let source = ExternalDictionarySource::ClickHouse(DictionaryClickHouseSource {
+            host: "localhost".to_string(),
+            port: 9000,
+            user: "static_user".to_string(),
+            password: "static_pass".to_string(),
+            db: "default".to_string(),
+            table: "src".to_string(),
+            query: None,
+            where_clause: None,
+            invalidate_query: None,
+        });
+        let mut map = make_infra_map(base_dict(source));
+        map.resolve_runtime_credentials_from_env().unwrap();
+
+        let dict = map.olap_dictionaries.values().next().unwrap();
+        if let DictionarySource::External(ExternalDictionarySource::ClickHouse(s)) = &dict.source {
+            assert_eq!(s.user, "static_user");
+            assert_eq!(s.password, "static_pass");
+        } else {
+            panic!("Expected ClickHouse source");
+        }
+    }
+}
+
+#[cfg(test)]
+mod diff_dictionaries_tests {
+    use super::*;
+    use crate::infrastructure::olap::clickhouse::dictionary::{
+        DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
+        DictionaryTableSource,
+    };
+    use std::collections::HashMap;
+
+    fn simple_dict(name: &str) -> OlapDictionary {
+        OlapDictionary {
+            name: name.to_string(),
+            database: None,
+            cluster_name: None,
+            source: DictionarySource::Table(DictionaryTableSource {
+                table: "src".to_string(),
+                database: None,
+                where_clause: None,
+                invalidate_query: None,
+            }),
+            primary_key: vec!["id".to_string()],
+            columns: vec![DictionaryColumn {
+                name: "val".to_string(),
+                type_string: "String".to_string(),
+                default_value: None,
+                expression: None,
+                is_injective: None,
+                is_hierarchical: None,
+                is_object_id: None,
+                comment: None,
+            }],
+            layout: DictionaryLayout::Hashed {
+                initial_array_size: None,
+                max_load_factor: None,
+            },
+            lifetime: DictionaryLifetime::Single { seconds: 3600 },
+            invalidate_query: None,
+            settings: HashMap::new(),
+            comment: None,
+            life_cycle: LifeCycle::FullyManaged,
+            version: None,
+            metadata: None,
+        }
+    }
+
+    fn run_diff(
+        before: HashMap<String, OlapDictionary>,
+        after: HashMap<String, OlapDictionary>,
+    ) -> (Vec<OlapChange>, Vec<FilteredChange>) {
+        let mut olap_changes = Vec::new();
+        let mut filtered = Vec::new();
+        InfrastructureMap::diff_dictionaries(
+            &before,
+            &after,
+            "local",
+            &mut olap_changes,
+            &mut filtered,
+            true,
+        );
+        (olap_changes, filtered)
+    }
+
+    // ─── Added ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_added() {
+        let before = HashMap::new();
+        let mut after = HashMap::new();
+        after.insert("local_dict_a".to_string(), simple_dict("dict_a"));
+
+        let (changes, filtered) = run_diff(before, after);
+
+        assert_eq!(changes.len(), 1);
+        assert!(filtered.is_empty());
+        assert!(matches!(
+            &changes[0],
+            OlapChange::OlapDictionary(Change::Added(d)) if d.name == "dict_a"
+        ));
+    }
+
+    // ─── Removed ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_removed() {
+        let mut before = HashMap::new();
+        before.insert("local_dict_b".to_string(), simple_dict("dict_b"));
+        let after = HashMap::new();
+
+        let (changes, filtered) = run_diff(before, after);
+
+        assert_eq!(changes.len(), 1);
+        assert!(filtered.is_empty());
+        assert!(matches!(
+            &changes[0],
+            OlapChange::OlapDictionary(Change::Removed(d)) if d.name == "dict_b"
+        ));
+    }
+
+    // ─── Updated ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_updated() {
+        let mut before = HashMap::new();
+        before.insert("local_dict_c".to_string(), simple_dict("dict_c"));
+
+        let mut updated = simple_dict("dict_c");
+        updated.lifetime = DictionaryLifetime::Single { seconds: 9999 };
+        let mut after = HashMap::new();
+        after.insert("local_dict_c".to_string(), updated);
+
+        let (changes, filtered) = run_diff(before, after);
+
+        assert_eq!(changes.len(), 1);
+        assert!(filtered.is_empty());
+        assert!(matches!(
+            &changes[0],
+            OlapChange::OlapDictionary(Change::Updated { before, .. }) if before.name == "dict_c"
+        ));
+    }
+
+    // ─── Unchanged ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_unchanged() {
+        let mut map = HashMap::new();
+        map.insert("local_dict_d".to_string(), simple_dict("dict_d"));
+
+        let (changes, filtered) = run_diff(map.clone(), map);
+        assert!(changes.is_empty());
+        assert!(filtered.is_empty());
+    }
+
+    // ─── Lifecycle: update blocked ────────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_update_blocked_by_lifecycle() {
+        // ExternallyManaged blocks all modifications including updates.
+        // DeletionProtected only blocks drops; it must NOT block updates for dictionaries
+        // because dictionary updates use CREATE OR REPLACE (not a DROP).
+        let mut before_dict = simple_dict("dict_e");
+        before_dict.life_cycle = LifeCycle::ExternallyManaged;
+        let mut before = HashMap::new();
+        before.insert("local_dict_e".to_string(), before_dict);
+
+        let mut after_dict = simple_dict("dict_e");
+        after_dict.lifetime = DictionaryLifetime::Single { seconds: 1 };
+        after_dict.life_cycle = LifeCycle::ExternallyManaged;
+        let mut after = HashMap::new();
+        after.insert("local_dict_e".to_string(), after_dict);
+
+        let (changes, filtered) = run_diff(before, after);
+
+        // Update should be blocked → no raw change, one filtered change
+        assert!(
+            changes.is_empty(),
+            "Expected no raw changes for lifecycle-blocked update"
+        );
+        assert_eq!(filtered.len(), 1);
+        assert!(matches!(
+            &filtered[0].change,
+            OlapChange::OlapDictionary(Change::Updated { .. })
+        ));
+    }
+
+    // ─── Lifecycle: removal blocked ───────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_removal_blocked_by_lifecycle() {
+        let mut before_dict = simple_dict("dict_f");
+        before_dict.life_cycle = LifeCycle::DeletionProtected;
+        let mut before = HashMap::new();
+        before.insert("local_dict_f".to_string(), before_dict);
+        let after = HashMap::new();
+
+        let (changes, filtered) = run_diff(before, after);
+
+        assert!(changes.is_empty());
+        assert_eq!(filtered.len(), 1);
+        assert!(matches!(
+            &filtered[0].change,
+            OlapChange::OlapDictionary(Change::Removed(d)) if d.name == "dict_f"
+        ));
+    }
+
+    // ─── Lifecycle: creation blocked ──────────────────────────────────────────
+
+    #[test]
+    fn test_diff_dict_creation_blocked_by_lifecycle() {
+        let before = HashMap::new();
+
+        let mut new_dict = simple_dict("dict_g");
+        new_dict.life_cycle = LifeCycle::ExternallyManaged;
+        let mut after = HashMap::new();
+        after.insert("local_dict_g".to_string(), new_dict);
+
+        let (changes, filtered) = run_diff(before, after);
+
+        assert!(changes.is_empty());
+        assert_eq!(filtered.len(), 1);
+        assert!(matches!(
+            &filtered[0].change,
+            OlapChange::OlapDictionary(Change::Added(d)) if d.name == "dict_g"
+        ));
+    }
+
+    // ─── Canonical ID: different default_database ─────────────────────────────
+
+    #[test]
+    fn test_diff_dict_canonical_id_matches_across_default_db() {
+        // A dict with database=None keyed under "dev_dict_h" (dev default) should match
+        // the same dict keyed under "prod_dict_h" (prod default) when diff_dictionaries
+        // is called with default_database = "dev".
+        let dict = simple_dict("dict_h"); // database = None
+
+        let mut before = HashMap::new();
+        before.insert("dev_dict_h".to_string(), dict.clone()); // keyed with dev default
+
+        let mut after = HashMap::new();
+        after.insert("prod_dict_h".to_string(), dict); // keyed with prod default
+
+        let mut olap_changes = Vec::new();
+        let mut filtered = Vec::new();
+        // Pass "dev" as default_database — both sides' canonical ID becomes "dev_dict_h"
+        InfrastructureMap::diff_dictionaries(
+            &before,
+            &after,
+            "dev",
+            &mut olap_changes,
+            &mut filtered,
+            true,
+        );
+
+        // Same schema under the same canonical ID → no changes
+        assert!(olap_changes.is_empty(), "Same dict under different stored keys should not produce changes when canonical ID matches");
+        assert!(filtered.is_empty());
     }
 }
