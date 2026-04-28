@@ -473,6 +473,42 @@ async fn run_local_infrastructure_with_timeout(
     }
 }
 
+const DEV_DOCKERLESS_HINT: &str =
+    "Docker is unavailable. For local development without Docker, rerun: moose dev --dockerless";
+
+fn format_local_infrastructure_error(
+    error: &anyhow::Error,
+    include_dockerless_hint: bool,
+) -> String {
+    let diagnostics = format!("{error:?}");
+    let existing_message = format!("Failed to run local infrastructure: {diagnostics}");
+
+    if include_dockerless_hint && is_container_runtime_unavailable_error(&diagnostics) {
+        format!("{DEV_DOCKERLESS_HINT}\n\n{existing_message}")
+    } else {
+        existing_message
+    }
+}
+
+fn is_container_runtime_unavailable_error(diagnostics: &str) -> bool {
+    let diagnostics = diagnostics.to_ascii_lowercase();
+    [
+        "failed to run docker commands",
+        "to ensure docker is running",
+        "is the docker daemon running",
+        "cannot connect to the docker daemon",
+        "docker daemon",
+        "no such file or directory: docker",
+        "no such file or directory: finch",
+        "os error 2: docker",
+        "os error 2: finch",
+        "finch is not running",
+        "cannot connect to the finch vm",
+    ]
+    .iter()
+    .any(|phrase| diagnostics.contains(phrase))
+}
+
 pub async fn top_command_handler(
     settings: Settings,
     commands: &Commands,
@@ -744,7 +780,7 @@ pub async fn top_command_handler(
                     .map_err(|e| {
                         RoutineFailure::error(Message {
                             action: "Dev".to_string(),
-                            details: format!("Failed to run local infrastructure: {e:?}"),
+                            details: format_local_infrastructure_error(&e, !*dockerless),
                         })
                     })?;
             } else {
@@ -2388,6 +2424,156 @@ mod tests {
     use crate::{cli::settings::read_settings, utilities::machine_id::get_or_create_machine_id};
 
     use super::*;
+
+    #[test]
+    fn dev_infrastructure_error_suggests_dockerless_when_docker_binary_is_missing() {
+        let error = anyhow::anyhow!("Failed: No such file or directory: docker (os error 2)");
+
+        let details = format_local_infrastructure_error(&error, true);
+
+        assert!(details.contains("moose dev --dockerless"));
+        assert!(details.contains("Failed: No such file or directory: docker (os error 2)"));
+    }
+
+    #[test]
+    fn dev_infrastructure_error_suggests_dockerless_when_wrapped_docker_check_fails() {
+        let error = anyhow::anyhow!(
+            "Failed: to ensure docker is running\nCaused by:\n    No such file or directory (os error 2)"
+        );
+
+        let details = format_local_infrastructure_error(&error, true);
+
+        assert!(details.contains("moose dev --dockerless"));
+        assert!(details.contains("to ensure docker is running"));
+    }
+
+    #[test]
+    fn dev_infrastructure_error_suggests_dockerless_when_docker_daemon_is_unreachable() {
+        let error = anyhow::anyhow!(
+            "Failed: Cannot connect to the Docker daemon at unix:///var/run/docker.sock"
+        );
+
+        let details = format_local_infrastructure_error(&error, true);
+
+        assert!(details.contains("moose dev --dockerless"));
+        assert!(details.contains("Cannot connect to the Docker daemon"));
+    }
+
+    #[test]
+    fn dev_infrastructure_error_suggests_dockerless_when_finch_binary_is_missing() {
+        let error = anyhow::anyhow!("Failed: No such file or directory: finch (os error 2)");
+
+        let details = format_local_infrastructure_error(&error, true);
+
+        assert!(details.contains("moose dev --dockerless"));
+        assert!(details.contains("Failed: No such file or directory: finch (os error 2)"));
+    }
+
+    #[test]
+    fn dev_infrastructure_error_suggests_dockerless_when_wrapped_finch_check_fails() {
+        let error = anyhow::anyhow!(
+            "Failed: to ensure docker is running\nCaused by:\n    No such file or directory: finch (os error 2)"
+        );
+
+        let details = format_local_infrastructure_error(&error, true);
+
+        assert!(details.contains("moose dev --dockerless"));
+        assert!(details.contains("No such file or directory: finch"));
+    }
+
+    #[test]
+    fn dev_infrastructure_error_suggests_dockerless_when_finch_daemon_is_unreachable() {
+        let error = anyhow::anyhow!("Failed: Cannot connect to the Finch VM. Is Finch running?");
+
+        let details = format_local_infrastructure_error(&error, true);
+
+        assert!(details.contains("moose dev --dockerless"));
+        assert!(details.contains("Cannot connect to the Finch VM"));
+    }
+
+    #[test]
+    fn local_infrastructure_error_does_not_suggest_dockerless_for_non_dev_paths() {
+        let error = anyhow::anyhow!("Failed: Cannot connect to the Docker daemon");
+
+        let details = format_local_infrastructure_error(&error, false);
+
+        assert!(!details.contains("moose dev --dockerless"));
+        assert_eq!(
+            details,
+            "Failed to run local infrastructure: Failed: Cannot connect to the Docker daemon"
+        );
+    }
+
+    #[test]
+    fn local_infrastructure_error_does_not_suggest_dockerless_for_finch_non_dev_paths() {
+        let error = anyhow::anyhow!("Failed: Finch is not running");
+
+        let details = format_local_infrastructure_error(&error, false);
+
+        assert!(!details.contains("moose dev --dockerless"));
+        assert_eq!(
+            details,
+            "Failed to run local infrastructure: Failed: Finch is not running"
+        );
+    }
+
+    #[test]
+    fn dev_infrastructure_error_does_not_suggest_dockerless_for_non_runtime_errors() {
+        let error = anyhow::anyhow!("Failed: ClickHouse container did not become healthy");
+
+        let details = format_local_infrastructure_error(&error, true);
+
+        assert!(!details.contains("moose dev --dockerless"));
+        assert_eq!(
+            details,
+            "Failed to run local infrastructure: Failed: ClickHouse container did not become healthy"
+        );
+    }
+
+    #[test]
+    fn dev_infrastructure_error_does_not_suggest_dockerless_for_generic_docker_text() {
+        let error = anyhow::anyhow!(
+            "Failed: timed out waiting for service. Check logs and verify is docker running locally."
+        );
+
+        let details = format_local_infrastructure_error(&error, true);
+
+        assert!(!details.contains("moose dev --dockerless"));
+        assert_eq!(
+            details,
+            "Failed to run local infrastructure: Failed: timed out waiting for service. Check logs and verify is docker running locally."
+        );
+    }
+
+    #[test]
+    fn dev_infrastructure_error_does_not_suggest_dockerless_for_unrelated_finch_missing_files() {
+        let error = anyhow::anyhow!(
+            "Failed: unable to read finch-config.yaml: No such file or directory (os error 2)"
+        );
+
+        let details = format_local_infrastructure_error(&error, true);
+
+        assert!(!details.contains("moose dev --dockerless"));
+        assert_eq!(
+            details,
+            "Failed to run local infrastructure: Failed: unable to read finch-config.yaml: No such file or directory (os error 2)"
+        );
+    }
+
+    #[test]
+    fn dev_infrastructure_error_does_not_suggest_dockerless_for_unrelated_missing_files() {
+        let error = anyhow::anyhow!(
+            "Failed: unable to read config.yaml: No such file or directory (os error 2)"
+        );
+
+        let details = format_local_infrastructure_error(&error, true);
+
+        assert!(!details.contains("moose dev --dockerless"));
+        assert_eq!(
+            details,
+            "Failed to run local infrastructure: Failed: unable to read config.yaml: No such file or directory (os error 2)"
+        );
+    }
 
     fn set_test_temp_dir() {
         let test_dir = "tests/tmp";
