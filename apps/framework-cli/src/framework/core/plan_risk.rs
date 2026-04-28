@@ -599,6 +599,13 @@ async fn get_response(
     }
 }
 
+fn prompt_bridge_closed_error() -> RoutineFailure {
+    RoutineFailure::error(Message::new(
+        "Prompt".to_string(),
+        "Prompt bridge closed unexpectedly".to_string(),
+    ))
+}
+
 /// Read one line from stdin, using a pinned session when stdout is a TTY.
 async fn read_stdin_line() -> Result<String, RoutineFailure> {
     if stdout().is_terminal() {
@@ -1186,7 +1193,7 @@ pub async fn rename_confirmation_gate(
                         tokio::select! {
                             biased;
                             line = stdin_fut => line.unwrap_or_default(),
-                            resp = bridge_fut => resp.unwrap_or_default(),
+                            resp = bridge_fut => resp.ok_or_else(prompt_bridge_closed_error)?,
                         }
                     }
                     None => {
@@ -1208,7 +1215,10 @@ pub async fn rename_confirmation_gate(
                             ),
                         )
                     );
-                    bridge.prompt(prompt_info).await.unwrap_or_default()
+                    bridge
+                        .prompt(prompt_info)
+                        .await
+                        .ok_or_else(prompt_bridge_closed_error)?
                 } else {
                     let text = format!(
                         "Rename detected ({}/{}): {}\n  \
@@ -1222,7 +1232,7 @@ pub async fn rename_confirmation_gate(
                     tokio::select! {
                         biased;
                         line = stdin_fut => line?,
-                        resp = bridge_fut => resp.unwrap_or_default(),
+                        resp = bridge_fut => resp.ok_or_else(prompt_bridge_closed_error)?,
                     }
                 }
             } else {
@@ -1378,6 +1388,43 @@ mod tests {
 
     fn empty_changes() -> InfraChanges {
         InfraChanges::default()
+    }
+
+    fn changes_with_pending_rename() -> InfraChanges {
+        let mut changes = empty_changes();
+        changes
+            .olap_changes
+            .push(OlapChange::Table(TableChange::Updated {
+                name: "events".to_string(),
+                column_changes: vec![
+                    ColumnChange::Removed(make_column("old_name")),
+                    ColumnChange::Added {
+                        column: make_column("new_name"),
+                        position_after: None,
+                    },
+                ],
+                order_by_change: OrderByChange {
+                    before: OrderBy::Fields(vec![]),
+                    after: OrderBy::Fields(vec![]),
+                },
+                partition_by_change: PartitionByChange {
+                    before: None,
+                    after: None,
+                },
+                before: make_table("events"),
+                after: make_table("events"),
+            }));
+        changes.pending_column_renames.push(PendingTableRenames {
+            database: None,
+            table_name: "events".to_string(),
+            renames: vec![DetectedColumnRename {
+                before: make_column("old_name"),
+                after: make_column("new_name"),
+                confidence: 0.9,
+            }],
+        });
+
+        changes
     }
 
     #[test]
@@ -1603,42 +1650,64 @@ mod tests {
 
     #[test]
     fn unapplied_pending_rename_stays_destructive() {
-        let mut changes = empty_changes();
-        changes
-            .olap_changes
-            .push(OlapChange::Table(TableChange::Updated {
-                name: "events".to_string(),
-                column_changes: vec![
-                    ColumnChange::Removed(make_column("old_name")),
-                    ColumnChange::Added {
-                        column: make_column("new_name"),
-                        position_after: None,
-                    },
-                ],
-                order_by_change: OrderByChange {
-                    before: OrderBy::Fields(vec![]),
-                    after: OrderBy::Fields(vec![]),
-                },
-                partition_by_change: PartitionByChange {
-                    before: None,
-                    after: None,
-                },
-                before: make_table("events"),
-                after: make_table("events"),
-            }));
-        changes.pending_column_renames.push(PendingTableRenames {
-            database: None,
-            table_name: "events".to_string(),
-            renames: vec![DetectedColumnRename {
-                before: make_column("old_name"),
-                after: make_column("new_name"),
-                confidence: 0.9,
-            }],
-        });
+        let changes = changes_with_pending_rename();
 
         // Without applying the rename, the Removed column is destructive
         let risk = classify_plan_risk(&changes);
         assert!(risk.is_destructive());
+    }
+
+    #[tokio::test]
+    async fn rename_bridge_failure_does_not_accept_default_yes() {
+        let bridge = PromptBridge::default();
+        let blocking_bridge = bridge.clone();
+        let blocking_prompt = tokio::spawn(async move {
+            blocking_bridge
+                .prompt(PendingPrompt {
+                    kind: PromptKind::Destructive {
+                        change_count: 1,
+                        summary: "DROP TABLE events".to_string(),
+                    },
+                    valid_responses: vec!["y".into(), "n".into()],
+                    default_response: Some("n".into()),
+                })
+                .await
+        });
+
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if bridge.get_pending().await.is_some() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("timed out waiting for blocking prompt");
+
+        let mut changes = changes_with_pending_rename();
+        let policy = ConfirmationPolicy {
+            accept_all: false,
+            accept_destructive: false,
+            accept_rename: false,
+            is_dev: false,
+            agent: true,
+        };
+
+        let result = rename_confirmation_gate(&mut changes, &policy, Some(&bridge)).await;
+
+        assert!(result.is_err());
+        if let OlapChange::Table(TableChange::Updated { column_changes, .. }) =
+            &changes.olap_changes[0]
+        {
+            assert!(matches!(column_changes[0], ColumnChange::Removed(_)));
+            assert!(matches!(column_changes[1], ColumnChange::Added { .. }));
+        } else {
+            panic!("Expected TableChange::Updated");
+        }
+
+        let _ = bridge.respond("n".to_string()).await;
+        let _ = blocking_prompt.await;
     }
 
     #[test]
