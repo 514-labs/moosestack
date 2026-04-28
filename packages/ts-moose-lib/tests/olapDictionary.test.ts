@@ -356,16 +356,16 @@ describe("OlapDictionary", () => {
       }).to.throw("requires exactly 1 primary key column");
     });
 
-    it("should throw when COMPLEX_KEY layout has only 1 primary key", () => {
+    it("should allow COMPLEX_KEY layout with a single string primary key", () => {
       const source = makeSourceTable();
-      expect(() => {
-        new OlapDictionary<ProductLookup>("dict_ck_single", {
-          sourceTable: source,
-          primaryKey: ["ProductId"],
-          layout: { type: "COMPLEX_KEY_HASHED" },
-          lifetime: 3600,
-        });
-      }).to.throw("requires at least 2 primary key columns");
+      // COMPLEX_KEY_* layouts accept string or composite keys — single column is valid.
+      const dict = new OlapDictionary<ProductLookup>("dict_ck_single", {
+        sourceTable: source,
+        primaryKey: ["ProductId"],
+        layout: { type: "COMPLEX_KEY_HASHED" },
+        lifetime: 3600,
+      });
+      expect(dict.name).to.equal("dict_ck_single");
     });
 
     it("should throw when registering a duplicate name", () => {

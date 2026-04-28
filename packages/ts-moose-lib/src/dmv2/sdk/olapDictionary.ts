@@ -81,7 +81,7 @@ export type DictionaryLayout =
     }
   | { type: "COMPLEX_KEY_DIRECT" };
 
-/** Set of COMPLEX_KEY_* layouts that require multiple primary key columns */
+/** Set of COMPLEX_KEY_* layouts that accept any-type keys (string, composite, etc.) and support one or more primary key columns */
 export const COMPLEX_KEY_LAYOUTS = new Set<DictionaryLayout["type"]>([
   "COMPLEX_KEY_HASHED",
   "COMPLEX_KEY_SPARSE_HASHED",
@@ -636,16 +636,12 @@ export class OlapDictionary<T> {
         `OlapDictionary '${name}': primaryKey must contain at least one column name.`,
       );
     }
-    if (COMPLEX_KEY_LAYOUTS.has(config.layout.type)) {
-      if (config.primaryKey.length < 2) {
-        throw new Error(
-          `OlapDictionary '${name}': layout '${config.layout.type}' requires at least 2 primary key columns (got ${config.primaryKey.length}).`,
-        );
-      }
-    } else {
+    if (!COMPLEX_KEY_LAYOUTS.has(config.layout.type)) {
+      // Non-complex layouts (HASHED, FLAT, CACHE, etc.) require exactly one UInt64-compatible key.
+      // COMPLEX_KEY_* layouts accept any-type (string, multi-column) keys with 1+ columns.
       if (config.primaryKey.length !== 1) {
         throw new Error(
-          `OlapDictionary '${name}': layout '${config.layout.type}' requires exactly 1 primary key column (got ${config.primaryKey.length}). Use a COMPLEX_KEY_* layout for multi-column keys.`,
+          `OlapDictionary '${name}': layout '${config.layout.type}' requires exactly 1 primary key column (got ${config.primaryKey.length}). Use a COMPLEX_KEY_* layout for string or multi-column keys.`,
         );
       }
     }
