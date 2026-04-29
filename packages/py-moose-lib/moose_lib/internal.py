@@ -26,10 +26,12 @@ from moose_lib.dmv2 import (
     get_web_apps,
     get_materialized_views,
     get_views,
+    get_olap_dictionaries,
     OlapTable,
     OlapConfig,
     SqlResource,
 )
+from moose_lib.dmv2.olap_dictionary import DictionaryLifetime
 from moose_lib.dmv2.stream import KafkaSchemaConfig
 from pydantic.alias_generators import to_camel
 from pydantic.json_schema import JsonSchemaValue
@@ -556,6 +558,30 @@ class ViewJson(BaseModel):
     metadata: Optional[dict] = None
 
 
+class OlapDictionaryJson(BaseModel):
+    """Serialization model for OlapDictionary → JSON → Rust CLI.
+
+    Field names use camelCase (via alias_generator) to match the Rust serde
+    ``#[serde(rename_all = "camelCase")]`` on ``OlapDictionary``.
+    """
+
+    model_config = model_config
+
+    name: str
+    database: Optional[str] = None
+    cluster_name: Optional[str] = None
+    source: dict
+    primary_key: List[str]
+    columns: List[dict]
+    layout: dict
+    lifetime: dict
+    invalidate_query: Optional[str] = None
+    settings: dict = {}
+    comment: Optional[str] = None
+    metadata: Optional[dict] = None
+    life_cycle: str = "FULLY_MANAGED"
+
+
 class InfrastructureMap(BaseModel):
     """Top-level model holding the configuration for all defined Moose resources.
 
@@ -585,6 +611,7 @@ class InfrastructureMap(BaseModel):
     web_apps: dict[str, WebAppJson]
     materialized_views: dict[str, MaterializedViewJson]
     views: dict[str, ViewJson]
+    olap_dictionaries: dict[str, OlapDictionaryJson] = {}
     unloaded_files: list[str] = []
 
 
@@ -832,6 +859,119 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
 
     # Fallback for any other EngineConfig subclass
     return BaseEngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
+
+
+def _serialize_dict_source(config, invalidate_query: Optional[str] = None) -> dict:
+    """Serialize OlapDictionaryConfig source to the JSON shape Rust expects.
+
+    Rust's ``DictionarySource`` is an internally-tagged enum::
+
+        {"type": "TABLE", "table": "...", "database": null}
+        {"type": "QUERY", "query": "..."}
+        {"type": "EXTERNAL", "source": {"type": "HTTP", "url": "...", "format": "..."}}
+
+    The ``EXTERNAL`` variant uses a nested ``source`` field to avoid the serde
+    duplicate-key issue that arises when two nested internally-tagged enums share
+    the same ``"type"`` discriminator key.
+
+    Args:
+        config: The ``OlapDictionaryConfig`` instance whose source fields are
+            serialized.
+        invalidate_query: Optional raw SQL string for ``INVALIDATE_QUERY``.
+            When provided it is included as ``"invalidateQuery"`` inside the
+            ``TABLE`` or ``QUERY`` source dict so that Rust emits the clause
+            inside ``SOURCE(CLICKHOUSE(...))``.  Ignored for ``EXTERNAL``
+            sources which carry their own ``invalidate_query`` field.
+    """
+    from moose_lib.dmv2.olap_table import OlapTable
+    from moose_lib.dmv2.view import View
+
+    if config.source_table is not None:
+        src = config.source_table
+        database = None
+        if isinstance(src, OlapTable):
+            database = src.config.database
+            table_name = src._generate_table_name()
+        elif isinstance(src, View):
+            database = getattr(src, "database", None)
+            table_name = src.name
+        else:
+            table_name = src.name
+        result: dict = {"type": "TABLE", "table": table_name, "database": database}
+        if invalidate_query is not None:
+            result["invalidateQuery"] = invalidate_query
+        return result
+    if config.source_query is not None:
+        result = {"type": "QUERY", "query": config.source_query}
+        if invalidate_query is not None:
+            result["invalidateQuery"] = invalidate_query
+        return result
+    if config.external_source is not None:
+        from pydantic import SecretStr
+
+        raw = config.external_source.model_dump(exclude_none=True, by_alias=True)
+        # Unwrap SecretStr fields so the actual credential values reach Rust.
+        ext = {
+            k: (v.get_secret_value() if isinstance(v, SecretStr) else v)
+            for k, v in raw.items()
+        }
+        # Rename discriminant: Python model uses `type`, but Rust's ExternalDictionarySource
+        # is tagged with #[serde(tag = "source_type")], so we must emit "source_type".
+        ext["source_type"] = ext.pop("type")
+        # Rust's ExternalDictionarySourceWrapper has field `external_source` which with
+        # #[serde(rename_all = "camelCase")] deserializes from JSON key "externalSource".
+        return {"type": "EXTERNAL", "externalSource": ext}
+    raise ValueError("OlapDictionaryConfig has no source set")
+
+
+def _serialize_dict_columns(column_list, column_overrides) -> list[dict]:
+    """Convert column list + per-column attribute overrides to Rust JSON shape.
+
+    Rust's ``DictionaryColumn``::
+
+        {"name": "...", "typeString": "...", "defaultValue": null, ...}
+    """
+    overrides = column_overrides or {}
+    result = []
+    for col in column_list:
+        entry: dict = {"name": col.name, "typeString": str(col.data_type)}
+        override = overrides.get(col.name)
+        if override:
+            if override.default is not None:
+                entry["defaultValue"] = override.default
+            if override.expression is not None:
+                entry["expression"] = override.expression
+            if override.injective:
+                entry["isInjective"] = True
+            if override.hierarchical:
+                entry["isHierarchical"] = True
+            if override.is_object_id:
+                entry["isObjectId"] = True
+            if override.comment is not None:
+                entry["comment"] = override.comment
+        result.append(entry)
+    return result
+
+
+def _serialize_dict_lifetime(lifetime) -> dict:
+    """Serialize DictionaryLifetime to Rust JSON shape.
+
+    Rust's ``DictionaryLifetime`` internally-tagged enum::
+
+        {"type": "STATIC"}
+        {"type": "SINGLE", "seconds": 3600}
+        {"type": "RANGE", "min": 60, "max": 300}
+    """
+    if isinstance(lifetime, int):
+        if lifetime == 0:
+            return {"type": "STATIC"}
+        return {"type": "SINGLE", "seconds": lifetime}
+    # DictionaryLifetime(min=x, max=y)
+    if lifetime.min == 0 and lifetime.max == 0:
+        return {"type": "STATIC"}
+    if lifetime.min == lifetime.max:
+        return {"type": "SINGLE", "seconds": lifetime.max}
+    return {"type": "RANGE", "min": lifetime.min, "max": lifetime.max}
 
 
 def _find_source_files(directory: str, extensions: tuple = (".py",)) -> list[str]:
@@ -1202,6 +1342,39 @@ def to_infra_map() -> dict:
             metadata=getattr(view, "metadata", None),
         )
 
+    # Serialize OLAP dictionaries
+    olap_dictionaries = {}
+    for name, d in get_olap_dictionaries().items():
+        # Build top-level invalidate_query from DictionaryInvalidation if set.
+        # Rust expects a raw SQL string: SELECT fn(column) FROM source_table.
+        # External-source dicts (source_tables is empty) have per-source
+        # invalidation — skip the top-level field for those.
+        # For single- and multi-table source/source_query dicts we use the
+        # first source table as the invalidation reference.
+        invalidate_query = None
+        if d.config.invalidate is not None and len(d.source_tables) >= 1:
+            inv = d.config.invalidate
+            # Preserve ClickHouse quoting; quoted identifiers may contain
+            # dashes, reserved words, or escaped backticks.
+            source_ref = d.source_tables[0]
+            invalidate_query = f"SELECT {inv.fn}({inv.column}) FROM {source_ref}"
+
+        olap_dictionaries[name] = OlapDictionaryJson(
+            name=d.name,
+            database=d.config.database,
+            cluster_name=d.config.cluster,
+            source=_serialize_dict_source(d.config, invalidate_query=invalidate_query),
+            primary_key=d.config.primary_key,
+            columns=_serialize_dict_columns(d._column_list, d.config.columns),
+            layout=d.config.layout.model_dump(exclude_none=True),
+            lifetime=_serialize_dict_lifetime(d.config.lifetime),
+            invalidate_query=invalidate_query,
+            settings={k: str(v) for k, v in (d.config.settings or {}).items()},
+            comment=d.config.comment,
+            metadata=getattr(d, "metadata", None),
+            life_cycle=(d.life_cycle.value if d.life_cycle else "FULLY_MANAGED"),
+        )
+
     infra_map = InfrastructureMap(
         tables=tables,
         topics=topics,
@@ -1212,6 +1385,7 @@ def to_infra_map() -> dict:
         web_apps=web_apps,
         materialized_views=materialized_views,
         views=views,
+        olap_dictionaries=olap_dictionaries,
     )
 
     return infra_map.model_dump(by_alias=True, exclude_none=False)
