@@ -1,0 +1,416 @@
+---
+title: ClickHouse Dictionaries
+description: Define in-memory key-value lookup stores over ClickHouse tables, queries, or external sources
+order: 5
+category: olap
+---
+
+import { Callout, BulletPointsCard, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# ClickHouse Dictionaries
+
+## Overview
+
+ClickHouse Dictionaries are in-memory key-value stores designed for fast point lookups. They are significantly faster than `JOIN`s for repeated lookups of static or slowly-changing reference data. Moose's `OlapDictionary` class wraps [ClickHouse `CREATE DICTIONARY`](https://clickhouse.com/docs/en/sql-reference/statements/create/dictionary) and manages the full lifecycle — creation, updates via `CREATE OR REPLACE DICTIONARY`, and teardown.
+
+<BulletPointsCard
+  title="When to use a Dictionary"
+  bulletStyle="check"
+  compact
+  bullets={[
+    "Enriching events with reference data (country codes, product categories, user tiers)",
+    "Replacing repeated JOINs in Materialized Views with a single dictGet() call",
+    "Low-latency lookups from external systems (MySQL, PostgreSQL, HTTP, Redis)",
+    "Slowly-changing dimension tables that should be cached in memory",
+  ]}
+/>
+
+<Callout type="info" title="ClickHouse 22.4+ required" compact>
+  Dictionaries require ClickHouse 22.4 or later. The `CREATE OR REPLACE
+  DICTIONARY` syntax used for updates requires ClickHouse 22.9+.
+</Callout>
+
+## Basic Usage
+
+Define a dictionary over an existing `OlapTable` or `View`. The `primaryKey` specifies which column(s) to use as the lookup key. Use a `HASHED` layout for single integer (UInt64) keys, and `COMPLEX_KEY_HASHED` for multi-column or string keys.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="productDict.ts" copy
+import { OlapDictionary, OlapTable, UInt64 } from "@514labs/moose-lib";
+
+// Source table (already defined elsewhere)
+import { ProductsTable } from "./Products";
+
+// The T interface describes the dictionary attributes.
+// Column names and types are inferred from T by the Moose compiler plugin.
+interface ProductLookup {
+  productId: UInt64;   // primary key — UInt64 integer → use HASHED layout
+  productName: string; // attribute
+  category: string;    // attribute
+  priceLevel: number;  // attribute
+}
+
+export const productDict = new OlapDictionary<ProductLookup>("dict_products", {
+  sourceTable: ProductsTable,
+  primaryKey: ["productId"],
+  layout: { type: "HASHED" },
+  lifetime: 3600, // reload from ClickHouse every hour
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="product_dict.py" copy
+from pydantic import BaseModel
+from moose_lib import OlapTable, OlapConfig, Key, UInt64
+from moose_lib.dmv2 import OlapDictionary, OlapDictionaryConfig, HashedLayout, DictionaryLifetime
+from .products import products_table  # source table defined elsewhere
+
+class ProductLookup(BaseModel):
+    product_id: UInt64      # primary key — UInt64 integer → use HashedLayout
+    product_name: str       # attribute
+    category: str           # attribute
+    price_level: float      # attribute
+
+product_dict = OlapDictionary[ProductLookup](
+    "dict_products",
+    OlapDictionaryConfig(
+        source_table=products_table,
+        primary_key=["product_id"],
+        layout=HashedLayout(),
+        lifetime=DictionaryLifetime(min=3600, max=3600),
+    ),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Using a Dictionary in a Materialized View
+
+Once defined, use `dictGet` helpers to reference the dictionary in a Materialized View `SELECT`:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="enrichedEventsMV.ts" copy
+import { MaterializedView, sql } from "@514labs/moose-lib";
+import { eventsTable } from "./Events";
+import { productDict } from "./productDict";
+
+interface EnrichedEvent {
+  eventId: string;
+  productId: number;
+  productName: string;
+  category: string;
+}
+
+export const enrichedEventsMV = new MaterializedView<EnrichedEvent>({
+  tableName: "EnrichedEvents",
+  materializedViewName: "EnrichedEvents_MV",
+  orderByFields: ["eventId"],
+  selectStatement: sql.statement`
+    SELECT
+      ${eventsTable.columns.eventId},
+      ${eventsTable.columns.productId},
+      ${productDict.get("productName", "productId")} AS productName,
+      ${productDict.get("category", "productId")} AS category
+    FROM ${eventsTable}
+  `,
+  selectTables: [eventsTable],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="enriched_events_mv.py" copy
+from moose_lib.dmv2 import MaterializedView, MaterializedViewOptions
+from .events import events_table
+from .product_dict import product_dict
+
+select_query = f"""
+SELECT
+    event_id,
+    product_id,
+    {product_dict.get("product_name", "product_id")} AS product_name,
+    {product_dict.get("category", "product_id")} AS category
+FROM events
+"""
+
+enriched_events_mv = MaterializedView[EnrichedEvent](
+    MaterializedViewOptions(
+        select_statement=select_query,
+        select_tables=[events_table],
+        table_name="enriched_events",
+        materialized_view_name="enriched_events_mv",
+        order_by_fields=["event_id"],
+    )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Layout Types
+
+The `layout` controls how the dictionary is stored in memory. Choose based on your key type and access pattern.
+
+| Layout | Key type | Best for |
+|---|---|---|
+| `FLAT` | UInt64 (0–500 000) | Small sequential integer keys |
+| `HASHED` | UInt64 | General-purpose integer keys |
+| `SPARSE_HASHED` | UInt64 | Memory-constrained environments (~3× less RAM) |
+| `HASHED_ARRAY` | UInt64 | High-concurrency multi-threaded reads |
+| `COMPLEX_KEY_HASHED` | String / multi-column | String keys or composite keys |
+| `COMPLEX_KEY_SPARSE_HASHED` | String / multi-column | Memory-constrained string keys |
+| `CACHE` | UInt64 | LRU cache — only loads accessed keys |
+| `COMPLEX_KEY_CACHE` | String / multi-column | LRU cache with complex keys |
+| `DIRECT` | UInt64 | No caching — reads source on every lookup |
+| `IP_TRIE` | IPv4/IPv6 | Longest-prefix match for IP ranges |
+
+<Callout type="info" title="HASHED vs COMPLEX_KEY_HASHED" compact>
+  Use `HASHED` for single `UInt64` numeric keys. Use `COMPLEX_KEY_HASHED` when
+  your primary key is a string, or when you need a composite (multi-column) key.
+  `COMPLEX_KEY_*` layouts support one or more columns of any type in `primaryKey`.
+</Callout>
+
+## Lifetime
+
+The `lifetime` controls how often ClickHouse reloads the dictionary from its source.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts copy
+// Static — never reloads (use for immutable data)
+lifetime: 0
+
+// Reload every 5 minutes
+lifetime: 300
+
+// Reload with jitter: between 5 and 6 minutes (avoids thundering herd)
+lifetime: { min: 300, max: 360 }
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py copy
+from moose_lib.dmv2 import DictionaryLifetime
+
+# Static — never reloads (use for immutable data)
+lifetime=DictionaryLifetime(min=0, max=0)
+
+# Reload every 5 minutes
+lifetime=DictionaryLifetime(min=300, max=300)
+
+# Reload with jitter: between 5 and 6 minutes (avoids thundering herd)
+lifetime=DictionaryLifetime(min=300, max=360)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Source Types
+
+### Local ClickHouse Table (recommended)
+
+Point `sourceTable` at an `OlapTable` or `View` on the same ClickHouse instance. Moose automatically tracks the dependency for correct DDL ordering.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts copy
+export const myDict = new OlapDictionary<MyLookup>("dict_my_lookup", {
+  sourceTable: MyTable,   // OlapTable or View
+  primaryKey: ["id"],
+  layout: { type: "HASHED" },
+  lifetime: 3600,
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py copy
+my_dict = OlapDictionary[MyLookup](
+    "dict_my_lookup",
+    OlapDictionaryConfig(
+        source_table=my_table,
+        primary_key=["id"],
+        layout=HashedLayout(),
+        lifetime=DictionaryLifetime(min=3600, max=3600),
+    ),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### SQL Query Source
+
+Use `sourceQuery` + `sourceTables` to define the dictionary from an arbitrary SQL query. This lets you pre-filter or join data before loading it into the dictionary.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts copy
+import { sql } from "@514labs/moose-lib";
+
+export const myDict = new OlapDictionary<ActiveProductLookup>("dict_active_products", {
+  sourceQuery: sql`
+    SELECT product_id, product_name, category
+    FROM products
+    WHERE is_active = 1
+  `,
+  sourceTables: [ProductsTable], // required for dependency tracking
+  primaryKey: ["product_id"],
+  layout: { type: "HASHED" },
+  lifetime: 600,
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py copy
+my_dict = OlapDictionary[ActiveProductLookup](
+    "dict_active_products",
+    OlapDictionaryConfig(
+        source_query="SELECT product_id, product_name, category FROM products WHERE is_active = 1",
+        source_tables=[products_table],  # required for dependency tracking
+        primary_key=["product_id"],
+        layout=HashedLayout(),
+        lifetime=DictionaryLifetime(min=600, max=600),
+    ),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### External Sources
+
+Connect to MySQL, PostgreSQL, HTTP endpoints, Redis, MongoDB, or S3. Use `mooseRuntimeEnv.get()` for credentials — never hardcode secrets.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts copy
+import { mooseRuntimeEnv } from "@514labs/moose-lib";
+
+export const myDict = new OlapDictionary<ProductLookup>("dict_mysql_products", {
+  externalSource: {
+    type: "mysql",
+    host: mooseRuntimeEnv.get("MYSQL_HOST"),
+    port: 3306,
+    user: mooseRuntimeEnv.get("MYSQL_USER"),
+    password: mooseRuntimeEnv.get("MYSQL_PASSWORD"),
+    db: "mydb",
+    table: "products",
+  },
+  primaryKey: ["product_id"],
+  layout: { type: "HASHED" },
+  lifetime: 300,
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py copy
+import os
+from moose_lib.dmv2 import MysqlSource
+
+my_dict = OlapDictionary[ProductLookup](
+    "dict_mysql_products",
+    OlapDictionaryConfig(
+        external_source=MysqlSource(
+            host=os.environ["MYSQL_HOST"],
+            port=3306,
+            user=os.environ["MYSQL_USER"],
+            password=os.environ["MYSQL_PASSWORD"],
+            db="mydb",
+            table="products",
+        ),
+        primary_key=["product_id"],
+        layout=HashedLayout(),
+        lifetime=DictionaryLifetime(min=300, max=300),
+    ),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Lifecycle Management
+
+`OlapDictionary` supports the same `lifeCycle` options as `OlapTable`:
+
+- `LifeCycle.FULLY_MANAGED` (default) — Moose creates, updates, and drops the dictionary.
+- `LifeCycle.DELETION_PROTECTED` — Moose can create but will not drop.
+- `LifeCycle.EXTERNALLY_MANAGED` — Moose never touches this dictionary (use for dictionaries managed outside Moose).
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts copy
+import { OlapDictionary, LifeCycle } from "@514labs/moose-lib";
+
+export const legacyDict = new OlapDictionary<LegacyLookup>("dict_legacy", {
+  sourceTable: LegacyTable,
+  primaryKey: ["id"],
+  layout: { type: "HASHED" },
+  lifetime: 0,
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED, // Moose will never touch this
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py copy
+from moose_lib.dmv2 import LifeCycle
+
+legacy_dict = OlapDictionary[LegacyLookup](
+    "dict_legacy",
+    OlapDictionaryConfig(
+        source_table=legacy_table,
+        primary_key=["id"],
+        layout=HashedLayout(),
+        lifetime=DictionaryLifetime(min=0, max=0),
+        life_cycle=LifeCycle.EXTERNALLY_MANAGED,
+    ),
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## SQL Helper Methods
+
+`OlapDictionary` provides typed helpers for generating `dictGet`, `dictGetOrDefault`, and `dictHas` SQL expressions.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts copy
+// dictGet — raises error if key not found
+productDict.get("productName", "product_id")
+// → dictGet('local.dict_products', 'productName', `product_id`)
+
+// dictGetOrDefault — returns default if key not found
+productDict.getOrDefault("category", "Unknown", "product_id")
+// → dictGetOrDefault('local.dict_products', 'category', `product_id`, 'Unknown')
+
+// dictHas — returns 1 if key exists, 0 otherwise
+productDict.has("product_id")
+// → dictHas('local.dict_products', `product_id`)
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py copy
+# dictGet — raises error if key not found
+product_dict.get("product_name", "product_id")
+# → dictGet('local.dict_products', 'product_name', product_id)
+
+# dictGetOrDefault — returns default if key not found
+product_dict.get_or_default("category", "'Unknown'", "product_id")
+# → dictGetOrDefault('local.dict_products', 'category', product_id, 'Unknown')
+
+# dictHas — returns 1 if key exists, 0 otherwise
+product_dict.has("product_id")
+# → dictHas('local.dict_products', product_id)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Known Limitations
+
+<BulletPointsCard
+  title="Current limitations"
+  bulletStyle="x"
+  compact
+  bullets={[
+    "ClickHouse 22.4+ required for dictionary support; 22.9+ required for CREATE OR REPLACE (updates without dropping).",
+    "Named Collections are not supported as credential sources — use mooseRuntimeEnv.get() or environment variables instead.",
+    "Dictionaries cannot source from other Moose-managed dictionaries (dict-to-dict sources).",
+    "COMPLEX_KEY_* layouts require at least two columns in primaryKey.",
+    "CACHE and COMPLEX_KEY_CACHE layouts are not recommended for production — they block during updates.",
+  ]}
+/>
