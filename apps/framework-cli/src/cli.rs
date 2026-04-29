@@ -497,7 +497,6 @@ fn is_container_runtime_unavailable_error(diagnostics: &str) -> bool {
         "to ensure docker is running",
         "is the docker daemon running",
         "cannot connect to the docker daemon",
-        "docker daemon",
         "no such file or directory: docker",
         "no such file or directory: finch",
         "os error 2: docker",
@@ -2546,6 +2545,33 @@ mod tests {
         assert_does_not_suggest_dockerless(
             &details,
             "Failed to run local infrastructure: Failed: timed out waiting for service. Check logs and verify is docker running locally."
+        );
+    }
+
+    #[test]
+    fn dev_infrastructure_timeout_does_not_suggest_dockerless() {
+        let error = anyhow::anyhow!(
+            "Infrastructure startup and validation timed out after 60 seconds.\n\n\
+                Troubleshooting steps:\n\
+                • Check if Docker is running: `docker info`\n\
+                • Stop existing containers: `docker stop $(docker ps -aq)`\n\
+                • Restart Docker Desktop (if using Desktop)\n\
+                • On Linux, restart Docker daemon: `sudo systemctl restart docker`\n\
+                • Check for port conflicts: `lsof -i :4000-4002`\n\
+                • Dockerless mode: check logs in .moose/native_infra/\n\
+                • Docker mode: check if Docker is running with `docker info`\n\
+                • Docker mode: stop existing containers with `docker stop $(docker ps -aq)`\n\
+                • If the issue persists, you can increase the timeout in your Moose configuration:\n\
+                  [dev]\n\
+                  infrastructure_timeout_seconds = 120\n\n\
+                For more help, visit: https://docs.moosejs.com/help/troubleshooting"
+        );
+
+        let details = format_local_infrastructure_error(&error, true);
+
+        assert_does_not_suggest_dockerless(
+            &details,
+            "Failed to run local infrastructure: Infrastructure startup and validation timed out after 60 seconds."
         );
     }
 
