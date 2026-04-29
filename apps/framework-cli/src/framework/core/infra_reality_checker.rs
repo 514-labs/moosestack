@@ -276,6 +276,29 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
         s.split_whitespace().collect::<Vec<_>>().join(" ")
     }
 
+    fn normalize_lifetime_clause(clause: &str) -> String {
+        let normalized = norm(clause);
+        if !normalized.starts_with("LIFETIME(") {
+            return normalized;
+        }
+
+        // Extract content within LIFETIME(...)
+        if let Some(start) = normalized.find('(') {
+            if let Some(end) = normalized.rfind(')') {
+                let content = &normalized[start + 1..end].trim();
+
+                // Parse single value: LIFETIME(300) -> LIFETIME(MIN 0 MAX 300)
+                if let Ok(seconds) = content.parse::<u64>() {
+                    return format!("LIFETIME(MIN 0 MAX {})", seconds);
+                }
+
+                // Already in MIN/MAX format or other format: keep normalized whitespace
+                return normalized;
+            }
+        }
+        normalized
+    }
+
     let (actual_cols, mut actual_clauses) = extract_body(actual_ddl);
     let (desired_cols, mut desired_clauses) = extract_body(desired_ddl);
 
@@ -286,8 +309,14 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
     actual_clauses.sort();
     desired_clauses.sort();
 
-    actual_clauses.iter().map(|c| norm(c)).collect::<Vec<_>>()
-        == desired_clauses.iter().map(|c| norm(c)).collect::<Vec<_>>()
+    actual_clauses
+        .iter()
+        .map(|c| normalize_lifetime_clause(c))
+        .collect::<Vec<_>>()
+        == desired_clauses
+            .iter()
+            .map(|c| normalize_lifetime_clause(c))
+            .collect::<Vec<_>>()
 }
 
 /// Normalizes a table reference for comparison.
@@ -2298,6 +2327,19 @@ mod tests {
     }
 
     #[test]
+    fn test_dicts_ddl_equivalent_lifetime_single_to_range_normalization() {
+        // Desired DDL has LIFETIME(300) (single value, what our code generates)
+        // Actual DDL has LIFETIME(MIN 0 MAX 300) (ClickHouse normalizes to range)
+        // These should be considered equivalent
+        let actual = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        let desired = "CREATE DICTIONARY IF NOT EXISTS `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(300)";
+        assert!(
+            dicts_ddl_equivalent(actual, desired),
+            "LIFETIME(300) should be equivalent to LIFETIME(MIN 0 MAX 300)"
+        );
+    }
+
+    #[test]
     fn test_dicts_ddl_equivalent_column_mismatch() {
         let actual = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64,\n    `value` String\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
         let desired = "CREATE DICTIONARY IF NOT EXISTS `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
@@ -2360,18 +2402,19 @@ mod tests {
         // dict is in both map and reality with the same structural DDL.
         // LAYOUT/LIFETIME order difference (SHOW CREATE vs our generator) should not
         // be flagged as a mismatch.
+        // ClickHouse also normalizes LIFETIME(300) to LIFETIME(MIN 0 MAX 300).
         let dict = make_test_dict("dict_products");
         let project_db = "test"; // matches create_test_project().clickhouse_config.db_name
         let map_key = format!("{}_{}", DEFAULT_DATABASE_NAME, dict.name);
 
         let desired_ddl = dict.to_create_if_not_exists_sql();
         // Simulate SHOW CREATE DICTIONARY: same structure, LAYOUT/LIFETIME swapped,
-        // no IF NOT EXISTS prefix.
+        // no IF NOT EXISTS prefix, and LIFETIME normalized from single value to range.
         let actual_ddl = desired_ddl
             .replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY")
             .replace(
                 "LAYOUT(HASHED())\nLIFETIME(300)",
-                "LIFETIME(300)\nLAYOUT(HASHED())",
+                "LIFETIME(MIN 0 MAX 300)\nLAYOUT(HASHED())",
             );
 
         let mut ddls = std::collections::HashMap::new();
