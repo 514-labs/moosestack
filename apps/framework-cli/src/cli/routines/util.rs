@@ -9,7 +9,7 @@ fn container_runtime_not_found_message(configured: &str) -> String {
          \n\
          Choose one of the following:\n\
          \n\
-         • Install a Docker-compatible CLI (Docker Desktop, Docker Engine, or Finch) and ensure the command is on your `PATH`.\n\
+         • Install a Docker-compatible CLI (Docker Desktop, Docker Engine, Finch, or nerdctl) and ensure the command is on your `PATH`.\n\
          \n\
          • Point Moose at a specific binary: set `container_cli_path` under `[dev]` in `~/.moose/config.toml`, or set the\n\
          environment variable `MOOSE_DEV__CONTAINER_CLI_PATH` to the full path of your `docker`, `finch`, or `nerdctl` executable.\n\

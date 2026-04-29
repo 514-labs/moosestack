@@ -2388,7 +2388,10 @@ async fn confirm_and_save_migration_legacy(
 
 #[cfg(test)]
 mod tests {
-    use crate::{cli::settings::read_settings, utilities::machine_id::get_or_create_machine_id};
+    use crate::{
+        cli::display::Message, cli::settings::read_settings,
+        utilities::machine_id::get_or_create_machine_id,
+    };
 
     use super::*;
 
@@ -2492,7 +2495,6 @@ mod tests {
 
     #[test]
     fn format_infrastructure_routine_failure_preserves_details_and_error() {
-        use crate::cli::display::Message;
         let rf = RoutineFailure::new(
             Message::new(
                 "Failed".to_string(),
@@ -2512,7 +2514,6 @@ mod tests {
 
     #[test]
     fn format_infrastructure_routine_failure_without_source_error() {
-        use crate::cli::display::Message;
         let rf = RoutineFailure::error(Message::new(
             "Build".to_string(),
             "something went wrong".to_string(),
