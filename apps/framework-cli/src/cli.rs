@@ -2509,4 +2509,19 @@ mod tests {
         );
         assert!(s.contains("os error 2") || s.contains("NotFound"), "{}", s);
     }
+
+    #[test]
+    fn format_infrastructure_routine_failure_without_source_error() {
+        use crate::cli::display::Message;
+        let rf = RoutineFailure::error(Message::new(
+            "Build".to_string(),
+            "something went wrong".to_string(),
+        ));
+        let s = super::format_infrastructure_routine_failure(&rf);
+        assert_eq!(s, "Build: something went wrong");
+        assert!(
+            !s.contains("\n\n"),
+            "no double newline when there is no source error: {s}"
+        );
+    }
 }
