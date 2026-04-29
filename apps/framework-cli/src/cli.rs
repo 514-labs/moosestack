@@ -424,6 +424,16 @@ fn override_project_config_from_url(
     Ok(())
 }
 
+/// Formats a [`RoutineFailure`] from local infrastructure for surfacing in `anyhow` errors, preserving
+/// both routine message details and the source error when present.
+fn format_infrastructure_routine_failure(e: &RoutineFailure) -> String {
+    match &e.error {
+        // Blank line before the source error so multi-line guidance (e.g. container-runtime options) reads clearly.
+        Some(err) => format!("{}: {}\n\n{err:#}", e.message.action, e.message.details),
+        None => format!("{}: {}", e.message.action, e.message.details),
+    }
+}
+
 /// Runs local infrastructure with a configurable timeout
 async fn run_local_infrastructure_with_timeout(
     project: &Arc<Project>,
@@ -437,15 +447,8 @@ async fn run_local_infrastructure_with_timeout(
         let project = project.clone();
         let settings = settings.clone();
         move || {
-            run_local_infrastructure(&project, &settings, provider.as_ref()).map_err(|e| {
-                anyhow::anyhow!(
-                    "{}: {}",
-                    e.message.action,
-                    e.error
-                        .map(|err| format!("{err:#}"))
-                        .unwrap_or_else(|| e.message.details)
-                )
-            })
+            run_local_infrastructure(&project, &settings, provider.as_ref())
+                .map_err(|e| anyhow::anyhow!(format_infrastructure_routine_failure(&e)))
         }
     });
 
@@ -744,7 +747,7 @@ pub async fn top_command_handler(
                     .map_err(|e| {
                         RoutineFailure::error(Message {
                             action: "Dev".to_string(),
-                            details: format!("Failed to run local infrastructure: {e:?}"),
+                            details: format!("Local infrastructure could not start:\n\n{e:#}"),
                         })
                     })?;
             } else {
@@ -1027,7 +1030,7 @@ pub async fn top_command_handler(
                     .map_err(|e| {
                         RoutineFailure::error(Message {
                             action: "Prod".to_string(),
-                            details: format!("Failed to run local infrastructure: {e:?}"),
+                            details: format!("Local infrastructure could not start:\n\n{e:#}"),
                         })
                     })?;
             }
@@ -2385,7 +2388,10 @@ async fn confirm_and_save_migration_legacy(
 
 #[cfg(test)]
 mod tests {
-    use crate::{cli::settings::read_settings, utilities::machine_id::get_or_create_machine_id};
+    use crate::{
+        cli::display::Message, cli::settings::read_settings,
+        utilities::machine_id::get_or_create_machine_id,
+    };
 
     use super::*;
 
@@ -2485,5 +2491,38 @@ mod tests {
         assert!(success_message.contains("Available templates for version"));
         assert!(success_message.contains("- typescript (typescript)"));
         assert!(success_message.contains("- python (python)"));
+    }
+
+    #[test]
+    fn format_infrastructure_routine_failure_preserves_details_and_error() {
+        let rf = RoutineFailure::new(
+            Message::new(
+                "Failed".to_string(),
+                "to ensure docker is running".to_string(),
+            ),
+            std::io::Error::new(std::io::ErrorKind::NotFound, "os error 2"),
+        );
+        let s = super::format_infrastructure_routine_failure(&rf);
+        assert!(s.contains("to ensure docker is running"), "{}", s);
+        assert!(
+            s.starts_with("Failed: to ensure docker is running\n\n"),
+            "{}",
+            s
+        );
+        assert!(s.contains("os error 2") || s.contains("NotFound"), "{}", s);
+    }
+
+    #[test]
+    fn format_infrastructure_routine_failure_without_source_error() {
+        let rf = RoutineFailure::error(Message::new(
+            "Build".to_string(),
+            "something went wrong".to_string(),
+        ));
+        let s = super::format_infrastructure_routine_failure(&rf);
+        assert_eq!(s, "Build: something went wrong");
+        assert!(
+            !s.contains("\n\n"),
+            "no double newline when there is no source error: {s}"
+        );
     }
 }
