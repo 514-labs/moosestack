@@ -163,11 +163,47 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
         }
 
         let col_block = ddl[start..end].to_string();
-        let clauses: Vec<String> = ddl[end..]
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect();
+
+        // Parse top-level clauses by their keyword prefix rather than splitting by lines.
+        // This handles multi-line clauses like SOURCE(...) that may span multiple lines.
+        let remainder = ddl[end..].trim();
+        let mut clauses = Vec::new();
+        let clause_keywords = ["PRIMARY KEY", "SOURCE", "LAYOUT", "LIFETIME", "SETTINGS"];
+
+        let mut current_pos = 0;
+        while current_pos < remainder.len() {
+            // Find the next clause keyword
+            let next_clause_start = clause_keywords
+                .iter()
+                .filter_map(|&keyword| {
+                    remainder[current_pos..]
+                        .find(keyword)
+                        .map(|pos| (current_pos + pos, keyword))
+                })
+                .min_by_key(|(pos, _)| *pos);
+
+            if let Some((keyword_pos, keyword)) = next_clause_start {
+                // Find where this clause ends (either at the next keyword or end of string)
+                let clause_start = keyword_pos;
+                let clause_end = clause_keywords
+                    .iter()
+                    .filter_map(|&kw| {
+                        remainder[clause_start + keyword.len()..]
+                            .find(kw)
+                            .map(|pos| clause_start + keyword.len() + pos)
+                    })
+                    .min()
+                    .unwrap_or(remainder.len());
+
+                let clause_text = remainder[clause_start..clause_end].trim();
+                if !clause_text.is_empty() {
+                    clauses.push(clause_text.to_string());
+                }
+                current_pos = clause_end;
+            } else {
+                break;
+            }
+        }
 
         (col_block, clauses)
     }
