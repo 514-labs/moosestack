@@ -3,19 +3,65 @@
 
 use std::path::PathBuf;
 
-use clap::{Args, Subcommand};
+use clap::{ArgGroup, Args, Subcommand};
+
+const MOOSE_INIT_AFTER_LONG_HELP: &str = "Examples (preferred):
+  moose init --name my-app
+  moose init --name my-app --template typescript
+  moose init --name my-app --template=typescript
+  moose init --name my-app --template typescript --location ./sandbox
+  moose init --name my-project --template typescript-empty --from-remote <CONNECTION-STRING>
+  moose init --name my-project --template python-empty --from-remote
+
+Positional <NAME> and [TEMPLATE] are still accepted for backward compatibility but are hidden from
+this help output; prefer --name and --template in scripts and agent workflows.
+
+Template catalog:
+  moose template list
+  moose template list --json
+
+Arg-driven init is non-interactive when --template is provided, or when stdin is not a terminal:
+omitted --template in other cases will prompt to select a template (TTY only).";
 
 #[derive(Subcommand)]
 pub enum Commands {
     // Initializes the developer environment with all the necessary directories including temporary ones for data storage
     /// Initialize a new project
-    #[command(visible_alias = "i")]
+    #[command(
+        visible_alias = "i",
+        after_long_help = MOOSE_INIT_AFTER_LONG_HELP,
+        group(
+            ArgGroup::new("init_project_name")
+                .id("init_project_name")
+                .args(["name", "name_option"])
+                .required(true)
+        ),
+        group(
+            ArgGroup::new("init_template_input")
+                .id("init_template_input")
+                .args(["template", "template_option"])
+        )
+    )]
     Init {
-        /// Name of your app or service
-        name: String,
+        /// [Deprecated] Use `--name` instead. Hidden from help; still parsed for compatibility.
+        #[arg(hide = true)]
+        name: Option<String>,
 
-        /// Template to use for the project
+        /// Name of your app or service
+        #[arg(long = "name", value_name = "NAME", conflicts_with = "name")]
+        name_option: Option<String>,
+
+        /// [Deprecated] Use `--template` instead. Hidden from help; still parsed for compatibility.
+        #[arg(hide = true, conflicts_with = "template_option")]
         template: Option<String>,
+
+        /// Template to use (run `moose template list` to see the catalog). Omit to select interactively (TTY only)
+        #[arg(
+            long = "template",
+            value_name = "TEMPLATE",
+            conflicts_with = "template"
+        )]
+        template_option: Option<String>,
 
         /// Location of your app or service
         #[arg(short, long)]

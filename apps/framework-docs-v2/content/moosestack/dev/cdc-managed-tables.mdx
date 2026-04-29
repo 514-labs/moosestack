@@ -42,14 +42,14 @@ The fastest way to get started is with `moose init --from-remote`. This single c
   <LanguageTabContent value="typescript">
 
 ```bash
-moose init my-analytics-app typescript-empty --from-remote "https://user:pass@host:8443/database"
+moose init --name my-analytics-app --template typescript-empty --from-remote "https://user:pass@host:8443/database"
 ```
 
   </LanguageTabContent>
   <LanguageTabContent value="python">
 
 ```bash
-moose init my-analytics-app python-empty --from-remote "https://user:pass@host:8443/database"
+moose init --name my-analytics-app --template python-empty --from-remote "https://user:pass@host:8443/database"
 ```
 
   </LanguageTabContent>
@@ -91,14 +91,14 @@ If you don't want to put credentials in the command, run without the URL:
   <LanguageTabContent value="typescript">
 
 ```bash
-moose init my-analytics-app typescript-empty --from-remote
+moose init --name my-analytics-app --template typescript-empty --from-remote
 ```
 
   </LanguageTabContent>
   <LanguageTabContent value="python">
 
 ```bash
-moose init my-analytics-app python-empty --from-remote
+moose init --name my-analytics-app --template python-empty --from-remote
 ```
 
   </LanguageTabContent>
@@ -551,7 +551,7 @@ ignore_patterns = ["app/external_models.py"]
 
 | Task | Command |
 |:-----|:--------|
-| Start new project from existing ClickHouse | `moose init my-app <template> --from-remote <URL>` |
+| Start new project from existing ClickHouse | `moose init --name my-app --template <template> --from-remote <URL>` |
 | Sync external models after schema change | `moose db pull` |
 | Start local development | `moose dev` |
 | Seed more data locally | `moose seed clickhouse --limit 1000` |

@@ -138,7 +138,7 @@ moose db pull [--clickhouse-url <URL>] [--file-path <OUTPUT_PATH>]
 ### New project from an existing DB
   If you're starting with an existing ClickHouse database, bootstrap code with `init --from-remote`, then use `db pull` over time to keep external models fresh:
   ```bash filename="Terminal" copy
-  moose init my-project <template> --from-remote $REMOTE_CLICKHOUSE_URL
+  moose init --name my-project --template <template> --from-remote $REMOTE_CLICKHOUSE_URL
   ```
 
   <Callout type="info" title="See the full guide" href="/moosestack/getting-started/from-clickhouse" ctaLabel="Get started">

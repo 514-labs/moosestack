@@ -99,7 +99,7 @@ describe("moose seed clickhouse with seedFilter", function () {
     // 1. Init project from play.clickhouse.com (git_clickhouse database - only 3 tables)
     testLogger.info("Initializing project from play.clickhouse.com...");
     const initResult = await execAsync(
-      `"${CLI_PATH}" init test-seed-filter typescript-empty --from-remote "${REMOTE_HTTPS_URL}" --location "${testProjectDir}"`,
+      `"${CLI_PATH}" init --name test-seed-filter --template typescript-empty --from-remote "${REMOTE_HTTPS_URL}" --location "${testProjectDir}"`,
     );
     testLogger.debug("Init output:", initResult.stdout);
 

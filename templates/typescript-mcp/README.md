@@ -35,7 +35,7 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose,514
 Initiate your project:
 
 ```bash
-moose init <project-name> typescript-mcp
+moose init --name <project-name> --template typescript-mcp
 cd <project-name>
 ```
 

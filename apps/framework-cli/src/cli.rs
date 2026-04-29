@@ -484,19 +484,31 @@ pub async fn top_command_handler(
     match commands {
         Commands::Init {
             name,
-            location,
+            name_option,
             template,
+            template_option,
+            location,
             no_fail_already_exists,
             from_remote,
             custom_dockerfile,
         } => {
+            let project_name = name_option.as_deref().or(name.as_deref()).ok_or_else(|| {
+                RoutineFailure::error(Message {
+                    action: "Init".to_string(),
+                    details:
+                        "Project name is required (use --name <NAME> or the legacy positional)."
+                            .to_string(),
+                })
+            })?;
+            let template_from_args = template_option.as_ref().or(template.as_ref());
+
             info!(
                 "Running init command with name: {}, location: {:?}, template: {:?}, custom_dockerfile: {}",
-                name, location, template, custom_dockerfile
+                project_name, location, template_from_args, custom_dockerfile
             );
 
             // Determine template, prompting when needed.
-            let template = match template {
+            let template = match template_from_args {
                 Some(t) => t.to_lowercase(),
                 None => {
                     display::show_message_wrapper(
@@ -510,21 +522,21 @@ pub async fn top_command_handler(
                 }
             };
 
-            let dir_path = Path::new(location.as_deref().unwrap_or(name));
+            let dir_path = Path::new(location.as_deref().unwrap_or(project_name));
 
             let capture_handle = crate::utilities::capture::capture_usage(
                 ActivityType::InitTemplateCommand,
-                Some(name.to_string()),
+                Some(project_name.to_string()),
                 &settings,
                 machine_id.clone(),
                 HashMap::from([("template".to_string(), template.to_string())]),
             );
 
-            check_project_name(name)?;
+            check_project_name(project_name)?;
 
             let project_outcome = initialize_project(&ProjectInitOptions {
                 template: &template,
-                project_name: name,
+                project_name,
                 dir_path,
                 no_fail_already_exists: *no_fail_already_exists,
                 custom_dockerfile: *custom_dockerfile,

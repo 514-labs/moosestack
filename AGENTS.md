@@ -112,3 +112,14 @@ When working with MooseStack data models, ClickHouse schemas, queries, or config
 Each rule includes MooseStack TypeScript/Python examples. When reviewing or implementing ClickHouse-related code, read relevant rule files and cite specific rules in your guidance.
 
 To install the skill: `514 agent init`
+
+## Learned User Preferences
+
+- Promote flag-first `moose init` in docs and examples: `moose init --name <name> --template <template>`; treat legacy `moose init <name> [template]` as backward-compatible only, not the primary or help-example style.
+- For `moose init --help`, show flag-based examples in the main promoted/after-help text; do not present positional forms as the recommended invocations even when the parser still accepts them.
+- For `moose dev` failures, show `moose dev --dockerless` when the runtime is actually unavailable; do not suggest dockerless for unrelated infra failures (avoid error-text matching that fires on timeout or generic troubleshooting copy).
+- When improving agent success on init, account for agents copying `moose harness init` patterns (e.g. `--template=...`) onto plain `moose init`—keep CLI, help, and docs aligned on flag syntax and valid template slugs.
+
+## Learned Workspace Facts
+
+- `moose init` is more discoverable at the top level than `moose harness init`, but harness init is the fuller agent setup path; documentation and help should make the two consistent on flags and template discovery (`moose template list`, `moose template list --json`).

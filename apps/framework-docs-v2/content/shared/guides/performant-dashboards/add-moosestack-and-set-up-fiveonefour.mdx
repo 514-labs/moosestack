@@ -118,13 +118,13 @@ First, decide where `moosestack/` should live in your monorepo. Then `cd` to tha
 
 <ConditionalContent whenId="source-database" whenValue="sqlserver">
 ```shell
-moose init moosestack typescript-empty
+moose init --name moosestack --template typescript-empty
 ```
 </ConditionalContent>
 
 <ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
 ```shell
-moose init moosestack typescript-empty --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING>
+moose init --name moosestack --template typescript-empty --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING>
 ```
 
 Enter your ClickHouse Cloud HTTPS connection string when prompted.

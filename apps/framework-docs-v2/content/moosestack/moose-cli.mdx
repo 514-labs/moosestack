@@ -23,15 +23,27 @@ These flags apply to all commands:
 
 ### Init
 Initialize a new project.
+
+**Preferred (flag syntax):**
 ```bash
-moose init <name> [template] [--location <location>] [--from-remote [<connection-string>]] [--custom-dockerfile] [--no-fail-already-exists]
+moose init --name <name> [--template <template>] [--location <location>] [--from-remote [<connection-string>]] [--custom-dockerfile] [--no-fail-already-exists]
 ```
-- `<name>`: Name of your app or service
-- `[template]`: Template to use. Run `moose template list` to see the catalog. Omit to pick interactively.
+
+- `--name <name>`: Name of your app or service
+- `--template <template>`: Template to use. Run `moose template list` (or `moose template list --json` for machine-readable output) to see the catalog. Omit to pick interactively.
 - `--location, -l`: Location for your app or service
 - `--from-remote`: Initialize from a remote database
 - `--custom-dockerfile`: Generate a custom Dockerfile at project root
 - `--no-fail-already-exists`: Allow init in an existing directory
+
+**Deprecated compatibility:** the legacy positional form `moose init <name> [template]` is still supported but omitted from this reference; new scripts, CI, and agent workflows should use `--name` and `--template` instead.
+
+Examples:
+```bash
+moose init --name my-app --template typescript
+moose init --name my-app
+moose init --name my-app --template typescript-empty --from-remote
+```
 
 ### Harness Init
 Initialize a project and set up the developer harness in one flow.
