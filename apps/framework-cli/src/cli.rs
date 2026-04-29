@@ -439,11 +439,12 @@ async fn run_local_infrastructure_with_timeout(
         move || {
             run_local_infrastructure(&project, &settings, provider.as_ref()).map_err(|e| {
                 anyhow::anyhow!(
-                    "{}: {}",
+                    "{}: {}\n{}",
                     e.message.action,
+                    e.message.details,
                     e.error
-                        .map(|err| format!("{err:#}"))
-                        .unwrap_or_else(|| e.message.details)
+                        .map(|err| format!("Caused by:\n    {err:#}"))
+                        .unwrap_or_default()
                 )
             })
         }
