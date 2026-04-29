@@ -2069,22 +2069,18 @@ async fn execute_drop_row_policy(
     Ok(())
 }
 
-/// Execute a CREATE DICTIONARY IF NOT EXISTS operation.
+/// Shared implementation for create and replace dictionary operations.
 ///
 /// Dictionary DDL can contain credentials (PASSWORD, SECRET_ACCESS_KEY, etc.) in the
 /// SOURCE clause. We bypass `run_query` (which logs the SQL at debug level) and call
 /// `build_query(...).execute()` directly so the raw SQL is never written to logs.
-async fn execute_create_dictionary(
-    _db_name: &str,
+async fn execute_dictionary_upsert(
+    operation: &str,
     dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    // Use CREATE OR REPLACE so that a structurally mismatched dict (detected by
-    // check_reality and removed from the reconciled map) gets overwritten rather
-    // than silently skipped by IF NOT EXISTS.
     let sql = dict.to_replace_sql();
-    // Log the operation without the SQL body to avoid leaking credentials.
-    tracing::debug!("Creating dictionary: {} (SQL redacted)", dict.name);
+    tracing::debug!("{} dictionary: {} (SQL redacted)", operation, dict.name);
     build_query(&client.client, &sql)
         .execute()
         .await
@@ -2095,27 +2091,23 @@ async fn execute_create_dictionary(
     Ok(())
 }
 
-/// Execute a CREATE OR REPLACE DICTIONARY operation.
-///
-/// Dictionary DDL can contain credentials (PASSWORD, SECRET_ACCESS_KEY, etc.) in the
-/// SOURCE clause. We bypass `run_query` (which logs the SQL at debug level) and call
-/// `build_query(...).execute()` directly so the raw SQL is never written to logs.
+// Use CREATE OR REPLACE for both create and replace — structurally mismatched dicts
+// are removed from the reconciled map by check_reality so that the subsequent diff
+// generates an Added change, which this function resolves via CREATE OR REPLACE.
+async fn execute_create_dictionary(
+    _db_name: &str,
+    dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    execute_dictionary_upsert("Creating", dict, client).await
+}
+
 async fn execute_replace_dictionary(
     _db_name: &str,
     dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    let sql = dict.to_replace_sql();
-    // Log the operation without the SQL body to avoid leaking credentials.
-    tracing::debug!("Replacing dictionary: {} (SQL redacted)", dict.name);
-    build_query(&client.client, &sql)
-        .execute()
-        .await
-        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
-            error: e,
-            resource: Some(dict.name.clone()),
-        })?;
-    Ok(())
+    execute_dictionary_upsert("Replacing", dict, client).await
 }
 
 /// Execute a DROP DICTIONARY IF EXISTS operation.
