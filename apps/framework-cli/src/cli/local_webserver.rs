@@ -2566,10 +2566,24 @@ impl Webserver {
     }
 
     async fn get_socket(&self, port: u16) -> SocketAddr {
-        tokio::net::lookup_host(format!("{}:{}", self.host, port))
-            .await
-            .unwrap()
-            .next()
+        // Prefer IPv4 when `host` resolves to both. On Debian-family systems
+        // /etc/hosts lists `::1 localhost` first, so a naive `.next()` ends up
+        // binding only to `[::1]` — which silently breaks clients that resolve
+        // `localhost` to 127.0.0.1 first (notably Node's `fetch`, which the
+        // DEC Bench asserter uses). Sticking to IPv4 also matches what every
+        // other moose-spawned listener (devkafka, devredis, the moose-runner
+        // child, the spawned ClickHouse and Temporal subprocesses) does, so
+        // bind ABI is consistent across the dev stack.
+        let candidates: Vec<SocketAddr> =
+            tokio::net::lookup_host(format!("{}:{}", self.host, port))
+                .await
+                .unwrap()
+                .collect();
+        candidates
+            .iter()
+            .find(|a| a.is_ipv4())
+            .copied()
+            .or_else(|| candidates.first().copied())
             .unwrap()
     }
     pub async fn socket(&self) -> SocketAddr {
