@@ -134,6 +134,12 @@ fn normalize_database(db: &Option<String>, default_database: &str) -> String {
 ///     our generated DDL (LAYOUT before LIFETIME) and ClickHouse's SHOW CREATE
 ///     output (LIFETIME before LAYOUT)
 ///
+/// Recognised top-level clauses: `PRIMARY KEY`, `SOURCE`, `LAYOUT`, `LIFETIME`,
+/// `INVALIDATE_QUERY`, `SETTINGS`, `COMMENT`. Clause boundaries are detected with
+/// a depth/quote-aware scanner so keywords inside parentheses or quoted strings
+/// (e.g. an `INVALIDATE_QUERY` body containing the word `SETTINGS`) are not
+/// mistaken for clause starts.
+///
 /// **Limitation**: identifier quoting and type-alias differences (e.g.
 /// `Int64` vs `Int64`) are preserved as-is; ClickHouse and our generator both
 /// use backtick-quoted identifiers so these should agree in practice.
@@ -164,44 +170,102 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
 
         let col_block = ddl[start..end].to_string();
 
-        // Parse top-level clauses by their keyword prefix rather than splitting by lines.
-        // This handles multi-line clauses like SOURCE(...) that may span multiple lines.
+        // Parse top-level clauses by keyword prefix using a depth/quote-aware scanner.
+        // Skips keyword matches inside parentheses or quoted strings so that e.g.
+        // a SOURCE url containing "LIFETIME" or an INVALIDATE_QUERY containing "SETTINGS"
+        // never splits a clause incorrectly.
         let remainder = ddl[end..].trim();
-        let mut clauses = Vec::new();
-        let clause_keywords = ["PRIMARY KEY", "SOURCE", "LAYOUT", "LIFETIME", "SETTINGS"];
+        let clause_keywords: &[&str] = &[
+            "PRIMARY KEY",
+            "SOURCE",
+            "LAYOUT",
+            "LIFETIME",
+            "INVALIDATE_QUERY",
+            "SETTINGS",
+            "COMMENT",
+        ];
 
+        // Returns the byte position (in `text`) and keyword for the first
+        // top-level keyword occurrence at or after `from`, skipping over
+        // parenthesised content and single/double-quoted strings.
+        fn find_top_level_keyword<'a>(
+            text: &str,
+            from: usize,
+            keywords: &[&'a str],
+        ) -> Option<(usize, &'a str)> {
+            let mut depth: usize = 0;
+            let mut in_single_quote = false;
+            let mut in_double_quote = false;
+
+            for (i, c) in text[from..].char_indices() {
+                let abs_pos = from + i;
+
+                if in_single_quote {
+                    if c == '\'' {
+                        in_single_quote = false;
+                    }
+                    continue;
+                }
+                if in_double_quote {
+                    if c == '"' {
+                        in_double_quote = false;
+                    }
+                    continue;
+                }
+                match c {
+                    '(' => depth += 1,
+                    ')' => depth = depth.saturating_sub(1),
+                    '\'' if depth == 0 => in_single_quote = true,
+                    '"' if depth == 0 => in_double_quote = true,
+                    _ if depth == 0 => {
+                        for &kw in keywords {
+                            if text[abs_pos..].starts_with(kw) {
+                                // Require a word boundary before (start or non-alnum/underscore)
+                                let prev_ok = abs_pos == from
+                                    || text[..abs_pos]
+                                        .chars()
+                                        .next_back()
+                                        .map(|p| !p.is_alphanumeric() && p != '_')
+                                        .unwrap_or(true);
+                                // Require a word boundary after (end or non-alnum/underscore)
+                                let after = abs_pos + kw.len();
+                                let next_ok = text[after..]
+                                    .chars()
+                                    .next()
+                                    .map(|n| !n.is_alphanumeric() && n != '_')
+                                    .unwrap_or(true);
+                                if prev_ok && next_ok {
+                                    return Some((abs_pos, kw));
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let mut clauses = Vec::new();
         let mut current_pos = 0;
         while current_pos < remainder.len() {
-            // Find the next clause keyword
-            let next_clause_start = clause_keywords
-                .iter()
-                .filter_map(|&keyword| {
-                    remainder[current_pos..]
-                        .find(keyword)
-                        .map(|pos| (current_pos + pos, keyword))
-                })
-                .min_by_key(|(pos, _)| *pos);
-
-            if let Some((keyword_pos, keyword)) = next_clause_start {
-                // Find where this clause ends (either at the next keyword or end of string)
-                let clause_start = keyword_pos;
-                let clause_end = clause_keywords
-                    .iter()
-                    .filter_map(|&kw| {
-                        remainder[clause_start + keyword.len()..]
-                            .find(kw)
-                            .map(|pos| clause_start + keyword.len() + pos)
-                    })
-                    .min()
+            match find_top_level_keyword(remainder, current_pos, clause_keywords) {
+                None => break,
+                Some((clause_start, keyword)) => {
+                    let clause_end = find_top_level_keyword(
+                        remainder,
+                        clause_start + keyword.len(),
+                        clause_keywords,
+                    )
+                    .map(|(pos, _)| pos)
                     .unwrap_or(remainder.len());
 
-                let clause_text = remainder[clause_start..clause_end].trim();
-                if !clause_text.is_empty() {
-                    clauses.push(clause_text.to_string());
+                    let clause_text = remainder[clause_start..clause_end].trim();
+                    if !clause_text.is_empty() {
+                        clauses.push(clause_text.to_string());
+                    }
+                    current_pos = clause_end;
                 }
-                current_pos = clause_end;
-            } else {
-                break;
             }
         }
 
