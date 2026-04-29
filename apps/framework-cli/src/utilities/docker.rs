@@ -60,7 +60,7 @@ impl DockerClient {
         Self { cli_command }
     }
 
-    /// Returns the configured container runtime executable name or path (e.g. `docker`, `finch`).
+    /// Returns the configured container runtime executable name or path (e.g. `docker`, `finch`, or `nerdctl`).
     #[must_use]
     pub fn container_cli(&self) -> &str {
         &self.cli_command
