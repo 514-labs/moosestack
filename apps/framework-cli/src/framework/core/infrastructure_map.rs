@@ -2831,8 +2831,8 @@ impl InfrastructureMap {
         // Named collections don't work on ClickHouse Cloud, so user/password must be specified
         // inline. mooseRuntimeEnv.get() lets users avoid hardcoding credentials.
         for dict in self.olap_dictionaries.values_mut() {
-            if let DictionarySource::External(ref mut ext) = dict.source {
-                match ext {
+            if let DictionarySource::External(ref mut wrapper) = dict.source {
+                match &mut wrapper.external_source {
                     ExternalDictionarySource::ClickHouse(s) => {
                         s.user = resolve_runtime_env(&s.user).map_err(|e| {
                             format!(
@@ -8764,7 +8764,7 @@ mod diff_orchestration_worker_tests {
         use crate::infrastructure::olap::clickhouse::dictionary::{
             DictionaryClickHouseSource, DictionaryColumn, DictionaryLayout, DictionaryLifetime,
             DictionaryMongoDbSource, DictionaryMysqlSource, DictionaryPostgresqlSource,
-            DictionarySource, ExternalDictionarySource,
+            DictionarySource, ExternalDictionarySource, ExternalDictionarySourceWrapper,
         };
 
         let make_dict = |name: &str, source: ExternalDictionarySource| -> OlapDictionary {
@@ -8772,7 +8772,9 @@ mod diff_orchestration_worker_tests {
                 name: name.to_string(),
                 database: None,
                 cluster_name: None,
-                source: DictionarySource::External(source),
+                source: DictionarySource::External(ExternalDictionarySourceWrapper {
+                    external_source: source,
+                }),
                 primary_key: vec!["id".to_string()],
                 columns: vec![DictionaryColumn {
                     name: "id".to_string(),
@@ -8869,8 +8871,8 @@ mod diff_orchestration_worker_tests {
 
         let check = |name: &str| {
             let d = masked.olap_dictionaries.get(name).unwrap();
-            if let DictionarySource::External(ref ext) = d.source {
-                match ext {
+            if let DictionarySource::External(ref wrapper) = d.source {
+                match &wrapper.external_source {
                     ExternalDictionarySource::ClickHouse(s) => {
                         assert_eq!(s.user, "admin", "{name}: user must NOT be masked");
                         assert_eq!(s.password, "[HIDDEN]", "{name}: password must be masked");
@@ -10606,24 +10608,26 @@ mod diff_dictionaries_metadata_tests {
     #[test]
     fn test_diff_dictionaries_detects_username_change() {
         use crate::infrastructure::olap::clickhouse::dictionary::{
-            DictionaryClickHouseSource, ExternalDictionarySource,
+            DictionaryClickHouseSource, ExternalDictionarySource, ExternalDictionarySourceWrapper,
         };
 
         let make_ext_dict = |user: &str| -> OlapDictionary {
             OlapDictionary {
-                source: DictionarySource::External(ExternalDictionarySource::ClickHouse(
-                    DictionaryClickHouseSource {
-                        host: "ch.example.com".to_string(),
-                        port: 9000,
-                        user: user.to_string(),
-                        password: "s3cr3t".to_string(),
-                        db: "mydb".to_string(),
-                        table: "users".to_string(),
-                        query: None,
-                        where_clause: None,
-                        invalidate_query: None,
-                    },
-                )),
+                source: DictionarySource::External(ExternalDictionarySourceWrapper {
+                    external_source: ExternalDictionarySource::ClickHouse(
+                        DictionaryClickHouseSource {
+                            host: "ch.example.com".to_string(),
+                            port: 9000,
+                            user: user.to_string(),
+                            password: "s3cr3t".to_string(),
+                            db: "mydb".to_string(),
+                            table: "users".to_string(),
+                            query: None,
+                            where_clause: None,
+                            invalidate_query: None,
+                        },
+                    ),
+                }),
                 ..simple_dict()
             }
         };
@@ -11186,6 +11190,7 @@ mod dictionary_runtime_env_tests {
         DictionaryClickHouseSource, DictionaryColumn, DictionaryLayout, DictionaryLifetime,
         DictionaryMongoDbSource, DictionaryMysqlSource, DictionaryPostgresqlSource,
         DictionaryRedisSource, DictionaryS3Source, DictionarySource, ExternalDictionarySource,
+        ExternalDictionarySourceWrapper,
     };
     use serial_test::serial;
     use std::collections::HashMap;
@@ -11195,7 +11200,9 @@ mod dictionary_runtime_env_tests {
             name: "test_dict".to_string(),
             database: None,
             cluster_name: None,
-            source: DictionarySource::External(source),
+            source: DictionarySource::External(ExternalDictionarySourceWrapper {
+                external_source: source,
+            }),
             primary_key: vec!["id".to_string()],
             columns: vec![DictionaryColumn {
                 name: "id".to_string(),
@@ -11252,7 +11259,10 @@ mod dictionary_runtime_env_tests {
         map.resolve_runtime_credentials_from_env().unwrap();
 
         let dict = map.olap_dictionaries.values().next().unwrap();
-        if let DictionarySource::External(ExternalDictionarySource::ClickHouse(s)) = &dict.source {
+        if let DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::ClickHouse(s),
+        }) = &dict.source
+        {
             assert_eq!(s.user, "resolved_user");
             assert_eq!(s.password, "resolved_pass");
         } else {
@@ -11284,7 +11294,10 @@ mod dictionary_runtime_env_tests {
         map.resolve_runtime_credentials_from_env().unwrap();
 
         let dict = map.olap_dictionaries.values().next().unwrap();
-        if let DictionarySource::External(ExternalDictionarySource::Mysql(s)) = &dict.source {
+        if let DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Mysql(s),
+        }) = &dict.source
+        {
             assert_eq!(s.user, "mysql_user");
             assert_eq!(s.password, "mysql_pass");
         } else {
@@ -11316,7 +11329,10 @@ mod dictionary_runtime_env_tests {
         map.resolve_runtime_credentials_from_env().unwrap();
 
         let dict = map.olap_dictionaries.values().next().unwrap();
-        if let DictionarySource::External(ExternalDictionarySource::Postgresql(s)) = &dict.source {
+        if let DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Postgresql(s),
+        }) = &dict.source
+        {
             assert_eq!(s.user, "pg_user");
             assert_eq!(s.password, "pg_pass");
         } else {
@@ -11343,7 +11359,10 @@ mod dictionary_runtime_env_tests {
         map.resolve_runtime_credentials_from_env().unwrap();
 
         let dict = map.olap_dictionaries.values().next().unwrap();
-        if let DictionarySource::External(ExternalDictionarySource::Redis(s)) = &dict.source {
+        if let DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Redis(s),
+        }) = &dict.source
+        {
             assert_eq!(s.password, Some("redis_pass".to_string()));
         } else {
             panic!("Expected Redis source");
@@ -11370,7 +11389,10 @@ mod dictionary_runtime_env_tests {
         map.resolve_runtime_credentials_from_env().unwrap();
 
         let dict = map.olap_dictionaries.values().next().unwrap();
-        if let DictionarySource::External(ExternalDictionarySource::Mongodb(s)) = &dict.source {
+        if let DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::Mongodb(s),
+        }) = &dict.source
+        {
             assert_eq!(s.user, "mongo_user");
             assert_eq!(s.password, "mongo_pass");
         } else {
@@ -11397,7 +11419,10 @@ mod dictionary_runtime_env_tests {
         map.resolve_runtime_credentials_from_env().unwrap();
 
         let dict = map.olap_dictionaries.values().next().unwrap();
-        if let DictionarySource::External(ExternalDictionarySource::S3(s)) = &dict.source {
+        if let DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::S3(s),
+        }) = &dict.source
+        {
             assert_eq!(s.access_key_id, Some("s3_key_id".to_string()));
             assert_eq!(s.secret_access_key, Some("s3_secret".to_string()));
         } else {
@@ -11457,7 +11482,10 @@ mod dictionary_runtime_env_tests {
         map.resolve_runtime_credentials_from_env().unwrap();
 
         let dict = map.olap_dictionaries.values().next().unwrap();
-        if let DictionarySource::External(ExternalDictionarySource::ClickHouse(s)) = &dict.source {
+        if let DictionarySource::External(ExternalDictionarySourceWrapper {
+            external_source: ExternalDictionarySource::ClickHouse(s),
+        }) = &dict.source
+        {
             assert_eq!(s.user, "static_user");
             assert_eq!(s.password, "static_pass");
         } else {
