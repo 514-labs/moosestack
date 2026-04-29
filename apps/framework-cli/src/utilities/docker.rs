@@ -60,6 +60,20 @@ impl DockerClient {
         Self { cli_command }
     }
 
+    /// Returns the configured container runtime executable name or path (e.g. `docker`, `finch`).
+    #[must_use]
+    pub fn container_cli(&self) -> &str {
+        &self.cli_command
+    }
+
+    /// Test-only constructor for unit tests that need a specific container CLI path.
+    #[cfg(test)]
+    pub(crate) fn new_for_test(cli_command: impl Into<String>) -> Self {
+        Self {
+            cli_command: cli_command.into(),
+        }
+    }
+
     /// Creates a new Command using the configured container CLI
     fn create_command(&self) -> Command {
         Command::new(&self.cli_command)
