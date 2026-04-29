@@ -1100,169 +1100,18 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::local_webserver::LocalWebserverConfig;
     use crate::framework::core::infrastructure::consumption_webserver::ConsumptionApiWebServer;
-    use crate::framework::core::infrastructure::table::{
-        Column, ColumnType, IntType, OrderBy, Table,
-    };
-    use crate::framework::core::infrastructure_map::{
-        PrimitiveSignature, PrimitiveTypes, TableChange,
-    };
-    use crate::framework::core::partial_infrastructure_map::LifeCycle;
+    use crate::framework::core::infrastructure::table::{Column, ColumnType, OrderBy, Table};
+    use crate::framework::core::infrastructure_map::TableChange;
+    use crate::framework::core::test_helpers::*;
     use crate::framework::versions::Version;
     use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
     use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-    use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
-    use async_trait::async_trait;
-
-    // Mock OLAP client for testing
-    struct MockOlapClient {
-        tables: Vec<Table>,
-        sql_resources: Vec<SqlResource>,
-        row_policies: Vec<SelectRowPolicy>,
-        dictionaries: Vec<String>,
-        /// DDL returned by show_create_dictionary, keyed by "db\x00name"
-        dictionary_ddls: std::collections::HashMap<String, String>,
-    }
-
-    impl MockOlapClient {
-        fn ddl_key(db: &str, name: &str) -> String {
-            format!("{}\x00{}", db, name)
-        }
-    }
-
-    #[async_trait]
-    impl OlapOperations for MockOlapClient {
-        async fn list_tables(
-            &self,
-            _db_name: &str,
-            _project: &Project,
-        ) -> Result<(Vec<Table>, Vec<TableWithUnsupportedType>), OlapChangesError> {
-            Ok((self.tables.clone(), vec![]))
-        }
-
-        async fn list_sql_resources(
-            &self,
-            _db_name: &str,
-            _default_database: &str,
-        ) -> Result<
-            Vec<crate::framework::core::infrastructure::sql_resource::SqlResource>,
-            OlapChangesError,
-        > {
-            Ok(self.sql_resources.clone())
-        }
-
-        async fn list_row_policies(
-            &self,
-            _db_name: &str,
-        ) -> Result<Vec<SelectRowPolicy>, OlapChangesError> {
-            Ok(self.row_policies.clone())
-        }
-
-        async fn list_dictionaries(&self, _db_name: &str) -> Result<Vec<String>, OlapChangesError> {
-            Ok(self.dictionaries.clone())
-        }
-
-        async fn show_create_dictionary(
-            &self,
-            db_name: &str,
-            dict_name: &str,
-        ) -> Result<String, OlapChangesError> {
-            let key = MockOlapClient::ddl_key(db_name, dict_name);
-            Ok(self.dictionary_ddls.get(&key).cloned().unwrap_or_default())
-        }
-    }
-
-    // Helper function to create a test project
-    fn create_test_project() -> Project {
-        Project {
-            language: crate::framework::languages::SupportedLanguages::Typescript,
-            redpanda_config: crate::infrastructure::stream::kafka::models::KafkaConfig::default(),
-            clickhouse_config: crate::infrastructure::olap::clickhouse::ClickHouseConfig {
-                db_name: "test".to_string(),
-                user: "test".to_string(),
-                password: "test".to_string(),
-                use_ssl: false,
-                host: "localhost".to_string(),
-                host_port: 18123,
-                native_port: 9000,
-                ..Default::default()
-            },
-            http_server_config: LocalWebserverConfig {
-                proxy_port: crate::cli::local_webserver::default_proxy_port(),
-                ..LocalWebserverConfig::default()
-            },
-            redis_config: crate::infrastructure::redis::redis_client::RedisConfig::default(),
-            git_config: crate::utilities::git::GitConfig::default(),
-            temporal_config:
-                crate::infrastructure::orchestration::temporal::TemporalConfig::default(),
-            state_config: crate::project::StateConfig::default(),
-            migration_config: crate::project::MigrationConfig::default(),
-            language_project_config: crate::project::LanguageProjectConfig::default(),
-            project_location: std::path::PathBuf::new(),
-            is_production: false,
-            log_payloads: false,
-            supported_old_versions: std::collections::HashMap::new(),
-            jwt: None,
-            authentication: crate::project::AuthenticationConfig::default(),
-
-            features: crate::project::ProjectFeatures::default(),
-            load_infra: None,
-
-            typescript_config: crate::project::TypescriptConfig::default(),
-            source_dir: crate::project::default_source_dir(),
-            docker_config: crate::project::DockerConfig::default(),
-            watcher_config: crate::cli::watcher::WatcherConfig::default(),
-            dev: crate::project::DevConfig::default(),
-        }
-    }
-
-    fn create_base_table(name: &str) -> Table {
-        Table {
-            name: name.to_string(),
-            columns: vec![Column {
-                name: "id".to_string(),
-                data_type: ColumnType::Int(IntType::Int64),
-                required: true,
-                unique: true,
-                primary_key: true,
-                default: None,
-                annotations: vec![],
-                comment: None,
-                ttl: None,
-                codec: None,
-                materialized: None,
-                alias: None,
-            }],
-            order_by: OrderBy::Fields(vec!["id".to_string()]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: Some(Version::from_string("1.0.0".to_string())),
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DataModel,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            constraints: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-            seed_filter: Default::default(),
-        }
-    }
 
     #[tokio::test]
     async fn test_reality_checker_basic() {
         // Create a mock table
-        let table = create_base_table("test_table");
+        let table = create_test_table("test_table");
 
         // Create mock OLAP client with one table
         let mock_client = MockOlapClient {
@@ -1270,33 +1119,11 @@ mod tests {
                 database: Some(DEFAULT_DATABASE_NAME.to_string()),
                 ..table.clone()
             }],
-            sql_resources: vec![],
-            row_policies: vec![],
-            dictionaries: vec![],
-            dictionary_ddls: std::collections::HashMap::new(),
+            ..Default::default()
         };
 
         // Create empty infrastructure map
-        let mut infra_map = InfrastructureMap {
-            default_database: DEFAULT_DATABASE_NAME.to_string(),
-            topics: HashMap::new(),
-            api_endpoints: HashMap::new(),
-            tables: HashMap::new(),
-            dmv1_views: HashMap::new(),
-            topic_to_table_sync_processes: HashMap::new(),
-            topic_to_topic_sync_processes: HashMap::new(),
-            function_processes: HashMap::new(),
-            consumption_api_web_server: ConsumptionApiWebServer {},
-            orchestration_workers: HashMap::new(),
-            sql_resources: HashMap::new(),
-            workflows: HashMap::new(),
-            web_apps: HashMap::new(),
-            materialized_views: HashMap::new(),
-            views: HashMap::new(),
-            select_row_policies: HashMap::new(),
-            moose_version: None,
-            olap_dictionaries: Default::default(),
-        };
+        let mut infra_map = make_empty_infra_map();
 
         // Create reality checker
         let checker = InfraRealityChecker::new(mock_client);
@@ -1326,8 +1153,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_reality_checker_structural_mismatch() {
-        let mut actual_table = create_base_table("test_table");
-        let infra_table = create_base_table("test_table");
+        let mut actual_table = create_test_table("test_table");
+        let infra_table = create_test_table("test_table");
 
         // Add an extra column to the actual table that's not in infra map
         actual_table.columns.push(Column {
@@ -1405,8 +1232,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_reality_checker_order_by_mismatch() {
-        let mut actual_table = create_base_table("test_table");
-        let mut infra_table = create_base_table("test_table");
+        let mut actual_table = create_test_table("test_table");
+        let mut infra_table = create_test_table("test_table");
 
         // Add timestamp column to both tables
         let timestamp_col = Column {
@@ -1495,8 +1322,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_reality_checker_engine_mismatch() {
-        let mut actual_table = create_base_table("test_table");
-        let mut infra_table = create_base_table("test_table");
+        let mut actual_table = create_test_table("test_table");
+        let mut infra_table = create_test_table("test_table");
 
         // Set different engine values
         actual_table.engine = ClickhouseEngine::ReplacingMergeTree {
@@ -1569,8 +1396,8 @@ mod tests {
         // - ClickHouse actually has ReplicatedReplacingMergeTree
         // - Stored infra map has MergeTree
         // - We should detect a mismatch
-        let mut actual_table = create_base_table("test_table");
-        let mut infra_table = create_base_table("test_table");
+        let mut actual_table = create_test_table("test_table");
+        let mut infra_table = create_test_table("test_table");
 
         // ClickHouse has ReplicatedReplacingMergeTree (with empty params - cloud mode)
         actual_table.engine = ClickhouseEngine::ReplicatedReplacingMergeTree {
@@ -1738,13 +1565,13 @@ mod tests {
     fn test_find_table_exact_id_match() {
         let table = Table {
             database: Some("custom_db".to_string()),
-            ..create_base_table("test_table")
+            ..create_test_table("test_table")
         };
 
         let mut infra_map_tables = HashMap::new();
         let infra_table = Table {
             database: Some("custom_db".to_string()),
-            ..create_base_table("test_table")
+            ..create_test_table("test_table")
         };
         let table_id = infra_table.id(DEFAULT_DATABASE_NAME);
         infra_map_tables.insert(table_id.clone(), infra_table);
@@ -1758,13 +1585,13 @@ mod tests {
         // When infra_map entry has no database, it should match any table
         let table = Table {
             database: Some("custom_db".to_string()),
-            ..create_base_table("test_table")
+            ..create_test_table("test_table")
         };
 
         let mut infra_map_tables = HashMap::new();
         let infra_table = Table {
             database: None, // No database in infra_map
-            ..create_base_table("test_table")
+            ..create_test_table("test_table")
         };
         let infra_table_id = infra_table.id(DEFAULT_DATABASE_NAME);
         infra_map_tables.insert(infra_table_id.clone(), infra_table);
@@ -1778,14 +1605,14 @@ mod tests {
         // FIX for ENG-1689: When both have matching databases, should match
         let table = Table {
             database: Some("custom_db".to_string()),
-            ..create_base_table("test_table")
+            ..create_test_table("test_table")
         };
 
         let mut infra_map_tables = HashMap::new();
         // Use a different key to force fallback path
         let infra_table = Table {
             database: Some("custom_db".to_string()),
-            ..create_base_table("test_table")
+            ..create_test_table("test_table")
         };
         let wrong_key = "wrong_key_custom_db_test_table_1_0_0".to_string();
         infra_map_tables.insert(wrong_key.clone(), infra_table);
@@ -1803,13 +1630,13 @@ mod tests {
         // Tables in different databases should NOT match
         let table = Table {
             database: Some("custom_db".to_string()),
-            ..create_base_table("test_table")
+            ..create_test_table("test_table")
         };
 
         let mut infra_map_tables = HashMap::new();
         let infra_table = Table {
             database: Some("other_db".to_string()), // Different database
-            ..create_base_table("test_table")
+            ..create_test_table("test_table")
         };
         let wrong_key = "wrong_key_other_db_test_table_1_0_0".to_string();
         infra_map_tables.insert(wrong_key, infra_table);
@@ -1826,13 +1653,13 @@ mod tests {
         // When infra_map has database but table doesn't, should NOT match
         let table = Table {
             database: None,
-            ..create_base_table("test_table")
+            ..create_test_table("test_table")
         };
 
         let mut infra_map_tables = HashMap::new();
         let infra_table = Table {
             database: Some("custom_db".to_string()),
-            ..create_base_table("test_table")
+            ..create_test_table("test_table")
         };
         let wrong_key = "wrong_key_custom_db_test_table_1_0_0".to_string();
         infra_map_tables.insert(wrong_key, infra_table);
@@ -1847,12 +1674,12 @@ mod tests {
     #[test]
     fn test_find_table_version_mismatch_no_match() {
         // Different versions should NOT match
-        let mut table = create_base_table("test_table");
+        let mut table = create_test_table("test_table");
         table.database = Some("custom_db".to_string());
         table.version = Some(Version::from_string("2.0.0".to_string()));
 
         let mut infra_map_tables = HashMap::new();
-        let mut infra_table = create_base_table("test_table");
+        let mut infra_table = create_test_table("test_table");
         infra_table.database = Some("custom_db".to_string());
         infra_table.version = Some(Version::from_string("1.0.0".to_string()));
         let wrong_key = "wrong_key_custom_db_test_table_1_0_0".to_string();
@@ -1866,8 +1693,8 @@ mod tests {
     async fn test_reality_checker_custom_database_engine_mismatch() {
         // This test verifies the ENG-1689 fix:
         // Tables in custom databases should properly match and detect engine mismatches
-        let mut actual_table = create_base_table("test_table");
-        let mut infra_table = create_base_table("test_table");
+        let mut actual_table = create_test_table("test_table");
+        let mut infra_table = create_test_table("test_table");
 
         // Both tables are in a custom database
         actual_table.database = Some("custom_db".to_string());
@@ -1943,8 +1770,8 @@ mod tests {
     async fn test_reality_checker_custom_database_detects_engine_difference() {
         // This test verifies that after the ENG-1689 fix, we properly detect
         // engine differences in custom database tables
-        let mut actual_table = create_base_table("test_table");
-        let mut infra_table = create_base_table("test_table");
+        let mut actual_table = create_test_table("test_table");
+        let mut infra_table = create_test_table("test_table");
 
         // Both tables are in a custom database
         actual_table.database = Some("custom_db".to_string());
@@ -2231,94 +2058,6 @@ mod tests {
 
     // ─── Dictionary discrepancy tests ───────────────────────────────────────
 
-    fn make_empty_infra_map() -> InfrastructureMap {
-        InfrastructureMap {
-            default_database: DEFAULT_DATABASE_NAME.to_string(),
-            topics: HashMap::new(),
-            api_endpoints: HashMap::new(),
-            tables: HashMap::new(),
-            dmv1_views: HashMap::new(),
-            topic_to_table_sync_processes: HashMap::new(),
-            topic_to_topic_sync_processes: HashMap::new(),
-            function_processes: HashMap::new(),
-            consumption_api_web_server: ConsumptionApiWebServer {},
-            orchestration_workers: HashMap::new(),
-            sql_resources: HashMap::new(),
-            workflows: HashMap::new(),
-            web_apps: HashMap::new(),
-            materialized_views: HashMap::new(),
-            views: HashMap::new(),
-            select_row_policies: HashMap::new(),
-            moose_version: None,
-            olap_dictionaries: Default::default(),
-        }
-    }
-
-    fn make_simple_mock(dictionaries: Vec<String>) -> MockOlapClient {
-        MockOlapClient {
-            tables: vec![],
-            sql_resources: vec![],
-            row_policies: vec![],
-            dictionaries,
-            dictionary_ddls: std::collections::HashMap::new(),
-        }
-    }
-
-    fn make_mock_with_ddls(
-        dictionaries: Vec<String>,
-        dictionary_ddls: std::collections::HashMap<String, String>,
-    ) -> MockOlapClient {
-        MockOlapClient {
-            tables: vec![],
-            sql_resources: vec![],
-            row_policies: vec![],
-            dictionaries,
-            dictionary_ddls,
-        }
-    }
-
-    fn make_simple_dict(
-        name: &str,
-    ) -> crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary {
-        use crate::infrastructure::olap::clickhouse::dictionary::{
-            DictionaryColumn, DictionaryLayout, DictionaryLifetime, DictionarySource,
-            DictionaryTableSource, OlapDictionary,
-        };
-        OlapDictionary {
-            name: name.to_string(),
-            database: None,
-            cluster_name: None,
-            source: DictionarySource::Table(DictionaryTableSource {
-                table: "src".to_string(),
-                database: None,
-                where_clause: None,
-                invalidate_query: None,
-            }),
-            primary_key: vec!["id".to_string()],
-            columns: vec![DictionaryColumn {
-                name: "id".to_string(),
-                type_string: "UInt64".to_string(),
-                default_value: None,
-                expression: None,
-                is_injective: None,
-                is_hierarchical: None,
-                is_object_id: None,
-                comment: None,
-            }],
-            layout: DictionaryLayout::Hashed {
-                initial_array_size: None,
-                max_load_factor: None,
-            },
-            lifetime: DictionaryLifetime::Single { seconds: 300 },
-            invalidate_query: None,
-            settings: HashMap::new(),
-            comment: None,
-            life_cycle: LifeCycle::FullyManaged,
-            version: None,
-            metadata: None,
-        }
-    }
-
     #[tokio::test]
     async fn test_dictionary_unmapped_detected() {
         // dict exists in reality but NOT in the infra map → unmapped
@@ -2341,7 +2080,7 @@ mod tests {
         // dict is in the infra map but NOT in reality → missing
         let mock_client = make_simple_mock(vec![]);
         let mut infra_map = make_empty_infra_map();
-        let dict = make_simple_dict("dict_products");
+        let dict = make_test_dict("dict_products");
         let map_key = format!("{}_{}", DEFAULT_DATABASE_NAME, dict.name);
         infra_map.olap_dictionaries.insert(map_key.clone(), dict);
 
@@ -2423,7 +2162,7 @@ mod tests {
         // → the map key is "local_dict_foo", not "test_dict_foo"
         let mock_client = make_simple_mock(vec![]); // nothing in reality
         let mut infra_map = make_empty_infra_map();
-        let dict = make_simple_dict("dict_foo");
+        let dict = make_test_dict("dict_foo");
         let map_key = format!("{}_{}", DEFAULT_DATABASE_NAME, dict.name); // "local_dict_foo"
         infra_map.olap_dictionaries.insert(map_key.clone(), dict);
 
@@ -2483,7 +2222,7 @@ mod tests {
         // check_reality() uses project.clickhouse_config.db_name as the default_db when
         // resolving a dict's database, so show_create_dictionary is called with "test".
         // The map key uses DEFAULT_DATABASE_NAME so reconcile_with_reality can remove it.
-        let dict = make_simple_dict("dict_products");
+        let dict = make_test_dict("dict_products");
         let project_db = "test"; // matches create_test_project().clickhouse_config.db_name
         let map_key = format!("{}_{}", DEFAULT_DATABASE_NAME, dict.name);
 
@@ -2520,7 +2259,7 @@ mod tests {
         // dict is in both map and reality with the same structural DDL.
         // LAYOUT/LIFETIME order difference (SHOW CREATE vs our generator) should not
         // be flagged as a mismatch.
-        let dict = make_simple_dict("dict_products");
+        let dict = make_test_dict("dict_products");
         let project_db = "test"; // matches create_test_project().clickhouse_config.db_name
         let map_key = format!("{}_{}", DEFAULT_DATABASE_NAME, dict.name);
 
@@ -2554,7 +2293,7 @@ mod tests {
     #[test]
     fn test_is_empty_false_with_mismatched_dictionary() {
         use crate::framework::core::infrastructure_map::{Change, OlapChange};
-        let dict = make_simple_dict("dict_x");
+        let dict = make_test_dict("dict_x");
         let discrepancies = InfraDiscrepancies {
             unmapped_tables: vec![],
             missing_tables: vec![],

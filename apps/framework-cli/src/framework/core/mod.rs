@@ -37,3 +37,6 @@ pub mod plan_validator;
 pub mod prompt_bridge;
 pub mod state_storage;
 pub mod version_bump;
+
+#[cfg(test)]
+pub(crate) mod test_helpers;
