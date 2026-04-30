@@ -159,6 +159,9 @@ fn can_run_cli_init_with_equals_style_template_flag() -> Result<(), Box<dyn std:
     cmd.assert().success();
 
     temp.child("package.json").assert(predicate::path::exists());
+    temp.child("app").assert(predicate::path::exists());
+    temp.child("moose.config.toml")
+        .assert(predicate::path::exists());
 
     Ok(())
 }
@@ -223,6 +226,12 @@ fn init_with_unknown_template_flag_prints_template_recovery(
         predicate::str::contains("Template 'simple' not found")
             .and(predicate::str::contains("moose template list --json")),
     );
+
+    temp.child("package.json")
+        .assert(predicate::path::missing());
+    temp.child("app").assert(predicate::path::missing());
+    temp.child("moose.config.toml")
+        .assert(predicate::path::missing());
 
     Ok(())
 }
