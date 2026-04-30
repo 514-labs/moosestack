@@ -150,6 +150,7 @@ fn can_run_cli_init_with_equals_style_template_flag() -> Result<(), Box<dyn std:
     let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"));
 
     cmd.arg("init")
+        .arg("--name")
         .arg("equals-app")
         .arg("--template=typescript")
         .arg("-l")
@@ -183,6 +184,24 @@ fn init_rejects_positional_and_flag_template_together() -> Result<(), Box<dyn st
 
 #[test]
 #[serial_test::serial(init)]
+fn init_rejects_positional_and_flag_name_together() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"));
+
+    cmd.arg("init")
+        .arg("my-app")
+        .arg("--name")
+        .arg("other-name");
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"))
+        .stderr(predicate::str::contains("--name"));
+
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial(init)]
 fn init_with_unknown_template_flag_prints_template_recovery(
 ) -> Result<(), Box<dyn std::error::Error>> {
     ensure_test_environment();
@@ -194,6 +213,7 @@ fn init_with_unknown_template_flag_prints_template_recovery(
     let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"));
 
     cmd.arg("init")
+        .arg("--name")
         .arg("order-loader")
         .arg("--template=simple")
         .arg("-l")
