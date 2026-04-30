@@ -13,8 +13,8 @@ const MOOSE_INIT_AFTER_LONG_HELP: &str = "Examples (preferred):
   moose init --name my-project --template typescript-empty --from-remote <CONNECTION-STRING>
   moose init --name my-project --template python-empty --from-remote
 
-Positional <NAME> and [TEMPLATE] are still accepted for backward compatibility but are hidden from
-this help output; prefer --name and --template in scripts and agent workflows.
+Legacy positional name and template arguments are still accepted for backward compatibility but are
+hidden from this help output; prefer --name and --template in scripts and agent workflows.
 
 Template catalog:
   moose template list

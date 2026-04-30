@@ -100,7 +100,7 @@ fn init_help_does_not_list_language_flag() -> Result<(), Box<dyn std::error::Err
         .assert()
         .success()
         .stdout(predicate::str::contains("--language").not())
-        .stdout(predicate::str::contains("[TEMPLATE]"))
+        .stdout(predicate::str::contains("[TEMPLATE]").not())
         .stdout(predicate::str::contains("Examples (preferred):"))
         .stdout(predicate::str::contains(
             "--name my-app --template typescript",
