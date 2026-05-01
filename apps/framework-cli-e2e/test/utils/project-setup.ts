@@ -102,7 +102,7 @@ export const setupTypeScriptProject = async (
   log.info(`Initializing TypeScript project with ${templateName} template`);
   try {
     const result = await execAsync(
-      `"${cliPath}" init ${appName} ${templateName} --location "${projectDir}"`,
+      `"${cliPath}" init --name ${appName} --template ${templateName} --location "${projectDir}"`,
       { env },
     );
     log.debug("CLI init stdout", { stdout: result.stdout });
@@ -166,7 +166,7 @@ export const setupPythonProject = async (
   log.info(`Initializing Python project with ${templateName} template`);
   try {
     const result = await execAsync(
-      `"${cliPath}" init ${appName} ${templateName} --location "${projectDir}"`,
+      `"${cliPath}" init --name ${appName} --template ${templateName} --location "${projectDir}"`,
       { env },
     );
     log.debug("CLI init stdout", { stdout: result.stdout });

@@ -113,7 +113,7 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose,514
 <ConditionalContent whenId="starting-point" whenValue="scratch">
 
 ```shell
-moose init <project-name> typescript-mcp
+moose init --name <project-name> --template typescript-mcp
 cd <project-name>
 ```
 
@@ -202,7 +202,7 @@ moose generate hash-token
 <ToggleBlock openText="Show instructions to create one" closeText="Hide instructions">
 Create one first and add it to your `pnpm-workspace.yaml`:
 ```shell
-moose init moosestack-service typescript --location packages/moosestack-service
+moose init --name moosestack-service --template typescript --location packages/moosestack-service
 ```
 ```yaml
 # pnpm-workspace.yaml

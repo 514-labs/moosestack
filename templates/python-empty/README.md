@@ -19,7 +19,7 @@ This is an empty Python-based Moose template that provides a minimal foundation 
 ### Installation
 
 1. Install Moose CLI: `pip install moose-cli`
-2. Create project: `moose init <project-name> python-empty`
+2. Create project: `moose init --name <project-name> --template python-empty`
 3. Install dependencies: `cd <project-name> && pip install -r requirements.txt`
 4. Run Moose: `moose dev`
 

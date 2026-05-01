@@ -18,7 +18,7 @@ interface CommandSnippetProps {
 }
 
 export function CommandSnippet({
-  initCommand = "moose init PROJECT_NAME TEMPLATE_NAME",
+  initCommand = "moose init --name PROJECT_NAME --template TEMPLATE_NAME",
   listCommand = "moose template list",
   initLabel = "Init",
   listLabel = "List",

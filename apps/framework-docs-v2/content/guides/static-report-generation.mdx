@@ -327,7 +327,7 @@ moose --version
 ### Step 2: Initialize project
 
 ```bash
-moose init sales-reports typescript-empty
+moose init --name sales-reports --template typescript-empty
 cd sales-reports
 pnpm install
 ```
@@ -2166,7 +2166,7 @@ If this returns empty `[]`, verify data was ingested and the date range is corre
 
 **Stopping the dev server:** Press `Ctrl+C` in the `moose dev` terminal. Docker containers stop automatically.
 
-**Starting over completely:** Stop `moose dev`, delete the project directory, and run `moose init` again.
+**Starting over completely:** Stop `moose dev`, delete the project directory, and run `moose init` with `--name` and `--template` again.
 
 **Reset data but keep code:** Stop `moose dev`, then remove the project's Docker volumes. **Caution:** `docker volume prune` deletes *all* unused volumes on your machine—not just this project's. Use `docker volume ls` to list volumes, identify yours (typically containing `clickhouse` or `redpanda`), and remove them with `docker volume rm <volume_name>`.
 

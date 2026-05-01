@@ -230,7 +230,7 @@ Then initialize the template in a temp directory:
 MOOSE_CLI="${MOOSE_CLI:-$(pwd)/target/debug/moose-cli}"
 TMP_DIR="$(mktemp -d /tmp/typescript-agent-XXXXXX)"
 cd "$TMP_DIR"
-"$MOOSE_CLI" init my-agent typescript-agent
+"$MOOSE_CLI" init --name my-agent --template typescript-agent
 cd my-agent
 pnpm install
 ```

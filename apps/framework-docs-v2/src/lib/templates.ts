@@ -202,7 +202,7 @@ export function getAllTemplates(): TemplateMetadata[] {
       const githubUrl = `https://github.com/514-labs/moosestack/tree/main/templates/${templateName}`;
 
       // Generate init command
-      const initCommand = `moose init PROJECT_NAME ${templateName}`;
+      const initCommand = `moose init --name PROJECT_NAME --template ${templateName}`;
 
       templates.push({
         name: templateName,
