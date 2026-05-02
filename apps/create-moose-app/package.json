@@ -16,12 +16,12 @@
   "license": "MIT",
   "bin": "./dist/index.js",
   "devDependencies": {
-    "@types/node": "^20",
-    "@typescript-eslint/eslint-plugin": "^5.62.0",
-    "@typescript-eslint/parser": "^5.62.0",
-    "eslint": "^8.46.0",
+    "@types/node": "^25",
+    "@typescript-eslint/eslint-plugin": "^8.59.1",
+    "@typescript-eslint/parser": "^8.59.1",
+    "eslint": "^10.3.0",
     "@repo/ts-config": "workspace:*",
-    "typescript": "^5.7.0"
+    "typescript": "^6.0.3"
   },
   "dependencies": {
     "@514labs/moose-cli": "0.3.205"
