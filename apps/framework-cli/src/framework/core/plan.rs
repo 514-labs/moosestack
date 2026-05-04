@@ -2081,12 +2081,11 @@ mod tests {
             .unwrap()
             .to_create_if_not_exists_sql();
         // Simulate SHOW CREATE DICTIONARY: same content, LAYOUT/LIFETIME swapped, no IF NOT EXISTS
-        // Note: DictionaryLifetime::Single generates "LIFETIME(300)", not "LIFETIME(MIN 0 MAX 300)"
         let actual_ddl = desired_ddl
             .replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY")
             .replace(
-                "LAYOUT(HASHED())\nLIFETIME(300)",
-                "LIFETIME(300)\nLAYOUT(HASHED())",
+                "LAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)",
+                "LIFETIME(MIN 0 MAX 300)\nLAYOUT(HASHED())",
             );
 
         let mut ddls = std::collections::HashMap::new();
