@@ -850,7 +850,7 @@ impl DictionaryLifetime {
     pub fn to_ddl(&self) -> String {
         match self {
             DictionaryLifetime::Static => "LIFETIME(0)".to_string(),
-            DictionaryLifetime::Single { seconds } => format!("LIFETIME({})", seconds),
+            DictionaryLifetime::Single { seconds } => format!("LIFETIME(MIN 0 MAX {})", seconds),
             DictionaryLifetime::Range(r) => {
                 format!("LIFETIME(MIN {} MAX {})", r.min, r.max)
             }
@@ -2003,7 +2003,7 @@ mod tests {
     fn test_single_lifetime_ddl() {
         assert_eq!(
             DictionaryLifetime::Single { seconds: 3600 }.to_ddl(),
-            "LIFETIME(3600)"
+            "LIFETIME(MIN 0 MAX 3600)"
         );
     }
 

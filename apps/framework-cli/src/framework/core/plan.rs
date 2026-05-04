@@ -2032,10 +2032,9 @@ mod tests {
             .unwrap()
             .to_create_if_not_exists_sql();
         // Drifted DDL: LIFETIME changed from 300 to 600
-        // Note: DictionaryLifetime::Single generates "LIFETIME(300)", not "LIFETIME(MIN 0 MAX 300)"
         let drifted_ddl = desired_ddl
             .replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY")
-            .replace("LIFETIME(300)", "LIFETIME(600)");
+            .replace("LIFETIME(MIN 0 MAX 300)", "LIFETIME(MIN 0 MAX 600)");
 
         let mut ddls = std::collections::HashMap::new();
         ddls.insert(format!("{}\x00{}", project_db, dict_name), drifted_ddl);

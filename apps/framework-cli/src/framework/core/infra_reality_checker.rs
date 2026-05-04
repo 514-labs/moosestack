@@ -2370,8 +2370,8 @@ mod tests {
         let actual_ddl = desired_ddl
             .replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY")
             .replace(
-                "LAYOUT(HASHED())\nLIFETIME(300)",
-                "LIFETIME(300)\nLAYOUT(HASHED())",
+                "LAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)",
+                "LIFETIME(MIN 0 MAX 300)\nLAYOUT(HASHED())",
             );
 
         let mut ddls = std::collections::HashMap::new();
