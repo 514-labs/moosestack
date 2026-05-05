@@ -1181,9 +1181,15 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
 
         // Structural comparison: for each dict present in both the infra map and CH,
         // compare the DDL body from SHOW CREATE DICTIONARY against the infra map
-        // definition.  Credentials are compared as-is (runtime env vars are resolved
-        // before calling to_create_if_not_exists_sql, so a credential rotation is
-        // correctly detected as a mismatch).
+        // definition.
+        //
+        // Credential visibility depends on the ClickHouse setting
+        // `display_secrets_in_show_and_select`:
+        //   - When ON (self-hosted default): credentials appear in SHOW CREATE output,
+        //     so a credential rotation IS detected as a mismatch.
+        //   - When OFF (ClickHouse Cloud default): credentials are replaced with
+        //     [HIDDEN]; dicts_ddl_equivalent() substitutes them from desired so the
+        //     comparison succeeds, but credential rotation cannot be detected.
         //
         // Limitation: SHOW CREATE DICTIONARY may order clauses differently from our
         // generated DDL (e.g. LIFETIME before LAYOUT).  dicts_ddl_equivalent() sorts
