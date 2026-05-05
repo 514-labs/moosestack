@@ -127,23 +127,73 @@ fn normalize_database(db: &Option<String>, default_database: &str) -> String {
 
 /// Returns true if two dictionary DDL strings are structurally equivalent.
 ///
+/// Substitutes `'[HIDDEN]'` credential placeholders in `actual` with the
+/// corresponding values from `desired`, matched by the keyword immediately
+/// preceding each placeholder.
+///
+/// ClickHouse replaces credential field values with `[HIDDEN]` in `SHOW CREATE`
+/// output when `display_secrets_in_show_and_select = 0` (the ClickHouse Cloud
+/// default). Without this substitution, every dictionary with SOURCE credentials
+/// would be flagged as structurally mismatched on every reconcile cycle.
+fn fill_hidden_credentials(actual: &str, desired: &str) -> String {
+    if !actual.contains("[HIDDEN]") {
+        return actual.to_string();
+    }
+    let placeholder = "'[HIDDEN]'";
+    let mut result = actual.to_string();
+    let mut offset = 0;
+    while let Some(pos) = result[offset..].find(placeholder) {
+        let abs = offset + pos;
+        // Find the keyword immediately before '[HIDDEN]' (last whitespace-delimited
+        // token before the opening quote).
+        let kw = result[..abs]
+            .trim_end()
+            .split_whitespace()
+            .next_back()
+            .unwrap_or("");
+        if !kw.is_empty() {
+            // Find `KEYWORD 'value'` in desired and extract the value.
+            let search = format!("{} '", kw);
+            if let Some(kw_pos) = desired.find(&search) {
+                let val_start = kw_pos + search.len();
+                if let Some(val_end) = desired[val_start..].find('\'') {
+                    let replacement = format!("'{}'", &desired[val_start..val_start + val_end]);
+                    result.replace_range(abs..abs + placeholder.len(), &replacement);
+                    offset = abs + replacement.len();
+                    continue;
+                }
+            }
+        }
+        offset = abs + placeholder.len();
+    }
+    result
+}
+
 /// Strips the `CREATE DICTIONARY …` header from each (everything before the
 /// first `(`), then for the column block and each subsequent clause:
 ///   - normalises whitespace (collapses runs of whitespace to a single space)
 ///   - sorts the post-column clauses to tolerate ordering differences between
 ///     our generated DDL (LAYOUT before LIFETIME) and ClickHouse's SHOW CREATE
 ///     output (LIFETIME before LAYOUT)
+///   - fills `'[HIDDEN]'` credential placeholders in actual with the
+///     corresponding values from desired (ClickHouse Cloud hides credentials)
 ///
 /// Recognised top-level clauses: `PRIMARY KEY`, `SOURCE`, `LAYOUT`, `LIFETIME`,
 /// `INVALIDATE_QUERY`, `SETTINGS`, `COMMENT`. Clause boundaries are detected with
-/// a depth/quote-aware scanner so keywords inside parentheses or quoted strings
-/// (e.g. an `INVALIDATE_QUERY` body containing the word `SETTINGS`) are not
-/// mistaken for clause starts.
+/// a depth/quote/backtick-aware scanner so keywords inside parentheses or quoted
+/// strings are not mistaken for clause starts.
 ///
 /// **Limitation**: identifier quoting and type-alias differences (e.g.
 /// `Int64` vs `Int64`) are preserved as-is; ClickHouse and our generator both
 /// use backtick-quoted identifiers so these should agree in practice.
 fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
+    let filled;
+    let actual_ddl = if actual_ddl.contains("[HIDDEN]") {
+        filled = fill_hidden_credentials(actual_ddl, desired_ddl);
+        filled.as_str()
+    } else {
+        actual_ddl
+    };
     fn extract_body(ddl: &str) -> (String, Vec<String>) {
         let start = match ddl.find('(') {
             Some(i) => i,
@@ -2377,6 +2427,23 @@ mod tests {
         // close the column block (e.g. `col)name` is unusual but valid ClickHouse DDL).
         let ddl = "CREATE DICTIONARY `db`.`d` (\n    `col)name` UInt64\n)\nPRIMARY KEY `col)name`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
         assert!(dicts_ddl_equivalent(ddl, ddl));
+    }
+
+    #[test]
+    fn test_dicts_ddl_equivalent_hidden_credentials_no_false_mismatch() {
+        // ClickHouse Cloud hides credentials in SHOW CREATE output. A '[HIDDEN]'
+        // password must not cause a false structural mismatch.
+        let actual = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD '[HIDDEN]' TABLE 'src' DB 'mydb'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        let desired = "CREATE DICTIONARY IF NOT EXISTS `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD 'real_pass' TABLE 'src' DB 'mydb'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(dicts_ddl_equivalent(actual, desired));
+    }
+
+    #[test]
+    fn test_dicts_ddl_equivalent_hidden_credentials_source_change_detected() {
+        // Even with a hidden password, a changed TABLE value must still be detected.
+        let actual = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD '[HIDDEN]' TABLE 'old_src' DB 'mydb'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        let desired = "CREATE DICTIONARY IF NOT EXISTS `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD 'real_pass' TABLE 'new_src' DB 'mydb'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(!dicts_ddl_equivalent(actual, desired));
     }
 
     #[test]
