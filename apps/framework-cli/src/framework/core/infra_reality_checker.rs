@@ -220,13 +220,12 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
                     _ if depth == 0 => {
                         for &kw in keywords {
                             if text[abs_pos..].starts_with(kw) {
-                                // Require a word boundary before (start or non-alnum/underscore)
-                                let prev_ok = abs_pos == from
-                                    || text[..abs_pos]
-                                        .chars()
-                                        .next_back()
-                                        .map(|p| !p.is_alphanumeric() && p != '_')
-                                        .unwrap_or(true);
+                                // Require a word boundary before (start of text or non-alnum/underscore)
+                                let prev_ok = text[..abs_pos]
+                                    .chars()
+                                    .next_back()
+                                    .map(|p| !p.is_alphanumeric() && p != '_')
+                                    .unwrap_or(true);
                                 // Require a word boundary after (end or non-alnum/underscore)
                                 let after = abs_pos + kw.len();
                                 let next_ok = text[after..]
