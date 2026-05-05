@@ -127,6 +127,22 @@ fn normalize_database(db: &Option<String>, default_database: &str) -> String {
 
 /// Returns true if two dictionary DDL strings are structurally equivalent.
 ///
+/// Returns the byte offset of the closing single quote in `s`, skipping
+/// backslash-escaped characters (`\'` is an embedded quote, not a closer).
+fn find_closing_quote(s: &str) -> Option<usize> {
+    let mut chars = s.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if c == '\\' {
+            chars.next(); // skip escaped character
+            continue;
+        }
+        if c == '\'' {
+            return Some(i);
+        }
+    }
+    None
+}
+
 /// Substitutes `'[HIDDEN]'` credential placeholders in `actual` with the
 /// corresponding values from `desired`, matched by the keyword immediately
 /// preceding each placeholder.
@@ -152,7 +168,7 @@ fn fill_hidden_credentials(actual: &str, desired: &str) -> String {
             let search = format!("{} '", kw);
             if let Some(kw_pos) = desired.find(&search) {
                 let val_start = kw_pos + search.len();
-                if let Some(val_end) = desired[val_start..].find('\'') {
+                if let Some(val_end) = find_closing_quote(&desired[val_start..]) {
                     let replacement = format!("'{}'", &desired[val_start..val_start + val_end]);
                     result.replace_range(abs..abs + placeholder.len(), &replacement);
                     offset = abs + replacement.len();
@@ -2446,6 +2462,15 @@ mod tests {
         let actual = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD '[HIDDEN]' TABLE 'old_src' DB 'mydb'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
         let desired = "CREATE DICTIONARY IF NOT EXISTS `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD 'real_pass' TABLE 'new_src' DB 'mydb'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
         assert!(!dicts_ddl_equivalent(actual, desired));
+    }
+
+    #[test]
+    fn test_dicts_ddl_equivalent_hidden_credentials_escaped_quote_in_password() {
+        // A password containing a single quote is backslash-escaped in the desired DDL
+        // (`pass\'word`). fill_hidden_credentials must not stop at the escaped quote.
+        let actual = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD '[HIDDEN]' TABLE 'src' DB 'mydb'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        let desired = "CREATE DICTIONARY IF NOT EXISTS `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD 'pass\\'word' TABLE 'src' DB 'mydb'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(dicts_ddl_equivalent(actual, desired));
     }
 
     #[test]
