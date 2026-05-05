@@ -146,11 +146,7 @@ fn fill_hidden_credentials(actual: &str, desired: &str) -> String {
         let abs = offset + pos;
         // Find the keyword immediately before '[HIDDEN]' (last whitespace-delimited
         // token before the opening quote).
-        let kw = result[..abs]
-            .trim_end()
-            .split_whitespace()
-            .next_back()
-            .unwrap_or("");
+        let kw = result[..abs].split_whitespace().next_back().unwrap_or("");
         if !kw.is_empty() {
             // Find `KEYWORD 'value'` in desired and extract the value.
             let search = format!("{} '", kw);
@@ -234,7 +230,7 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
                 '`' => in_backtick = true,
                 '(' => depth += 1,
                 ')' => {
-                    depth -= 1;
+                    depth = depth.saturating_sub(1);
                     if depth == 0 {
                         end = start + off + ')'.len_utf8();
                         break;
