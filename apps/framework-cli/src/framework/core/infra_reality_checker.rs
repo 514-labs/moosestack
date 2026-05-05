@@ -220,9 +220,18 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
         let mut in_single = false;
         let mut in_double = false;
         let mut in_backtick = false;
+        let mut skip_next_single = false;
         let mut end = start;
         for (off, ch) in ddl[start..].char_indices() {
             if in_single {
+                if skip_next_single {
+                    skip_next_single = false;
+                    continue;
+                }
+                if ch == '\\' {
+                    skip_next_single = true;
+                    continue;
+                }
                 if ch == '\'' {
                     in_single = false;
                 }
@@ -285,11 +294,20 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
             let mut in_single_quote = false;
             let mut in_double_quote = false;
             let mut in_backtick = false;
+            let mut skip_next_single = false;
 
             for (i, c) in text[from..].char_indices() {
                 let abs_pos = from + i;
 
                 if in_single_quote {
+                    if skip_next_single {
+                        skip_next_single = false;
+                        continue;
+                    }
+                    if c == '\\' {
+                        skip_next_single = true;
+                        continue;
+                    }
                     if c == '\'' {
                         in_single_quote = false;
                     }
@@ -2436,6 +2454,24 @@ mod tests {
     fn test_dicts_ddl_equivalent_source_password_with_paren() {
         // A SOURCE credential containing ')' must not corrupt clause boundary detection.
         let ddl = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD 'p@ss)word' DB 'mydb' TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(dicts_ddl_equivalent(ddl, ddl));
+    }
+
+    #[test]
+    fn test_dicts_ddl_equivalent_column_default_escaped_quote_with_paren() {
+        // A column DEFAULT whose value contains a backslash-escaped single quote
+        // followed by ')' must not prematurely close the column block. Without the
+        // backslash-skip fix the scanner exits in_single at the escaped quote and
+        // then sees ')' outside any string, corrupting depth tracking.
+        let ddl = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64,\n    `status` String DEFAULT '\\')'  \n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(dicts_ddl_equivalent(ddl, ddl));
+    }
+
+    #[test]
+    fn test_dicts_ddl_equivalent_source_password_escaped_quote_with_paren() {
+        // A SOURCE credential containing a backslash-escaped single quote followed
+        // by ')' must not corrupt clause boundary detection in find_top_level_keyword.
+        let ddl = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD 'p@ss\\')word' DB 'mydb' TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
         assert!(dicts_ddl_equivalent(ddl, ddl));
     }
 
