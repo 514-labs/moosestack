@@ -152,11 +152,12 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
 
         // Walk the DDL from the opening `(` tracking depth to find the
         // matching `)` that closes the column list.
-        // Quote-aware: a `)` inside a DEFAULT value like `DEFAULT ')'` must not
-        // prematurely end the column block.
+        // Quote-aware: a `)` inside a quoted value (single, double, or backtick)
+        // must not prematurely end the column block.
         let mut depth = 0usize;
         let mut in_single = false;
         let mut in_double = false;
+        let mut in_backtick = false;
         let mut end = start;
         for (off, ch) in ddl[start..].char_indices() {
             if in_single {
@@ -171,9 +172,16 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
                 }
                 continue;
             }
+            if in_backtick {
+                if ch == '`' {
+                    in_backtick = false;
+                }
+                continue;
+            }
             match ch {
                 '\'' => in_single = true,
                 '"' => in_double = true,
+                '`' => in_backtick = true,
                 '(' => depth += 1,
                 ')' => {
                     depth -= 1;
@@ -2360,6 +2368,14 @@ mod tests {
     fn test_dicts_ddl_equivalent_source_password_with_paren() {
         // A SOURCE credential containing ')' must not corrupt clause boundary detection.
         let ddl = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD 'p@ss)word' DB 'mydb' TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(dicts_ddl_equivalent(ddl, ddl));
+    }
+
+    #[test]
+    fn test_dicts_ddl_equivalent_column_backtick_identifier_with_paren() {
+        // A backtick-quoted column identifier containing ')' must not prematurely
+        // close the column block (e.g. `col)name` is unusual but valid ClickHouse DDL).
+        let ddl = "CREATE DICTIONARY `db`.`d` (\n    `col)name` UInt64\n)\nPRIMARY KEY `col)name`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
         assert!(dicts_ddl_equivalent(ddl, ddl));
     }
 
