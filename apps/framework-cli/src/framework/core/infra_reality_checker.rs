@@ -273,7 +273,17 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
     }
 
     fn norm(s: &str) -> String {
-        s.split_whitespace().collect::<Vec<_>>().join(" ")
+        let s = s.split_whitespace().collect::<Vec<_>>().join(" ");
+        // Normalize LIFETIME(N) → LIFETIME(MIN 0 MAX N) to match ClickHouse SHOW CREATE output.
+        // Both forms are valid ClickHouse DDL; SHOW CREATE always returns the long form.
+        if let Some(rest) = s.strip_prefix("LIFETIME(") {
+            if let Some(inner) = rest.strip_suffix(')') {
+                if inner.bytes().all(|b| b.is_ascii_digit()) {
+                    return format!("LIFETIME(MIN 0 MAX {})", inner);
+                }
+            }
+        }
+        s
     }
 
     let (actual_cols, mut actual_clauses) = extract_body(actual_ddl);
@@ -2367,10 +2377,12 @@ mod tests {
         let desired_ddl = dict.to_create_if_not_exists_sql();
         // Simulate SHOW CREATE DICTIONARY: same structure, LAYOUT/LIFETIME swapped,
         // no IF NOT EXISTS prefix.
+        // Simulate SHOW CREATE DICTIONARY: strip IF NOT EXISTS, swap LAYOUT/LIFETIME order,
+        // and normalize LIFETIME(N) → LIFETIME(MIN 0 MAX N) as ClickHouse does.
         let actual_ddl = desired_ddl
             .replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY")
             .replace(
-                "LAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)",
+                "LAYOUT(HASHED())\nLIFETIME(300)",
                 "LIFETIME(MIN 0 MAX 300)\nLAYOUT(HASHED())",
             );
 

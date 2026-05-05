@@ -2031,10 +2031,11 @@ mod tests {
             .next()
             .unwrap()
             .to_create_if_not_exists_sql();
-        // Drifted DDL: LIFETIME changed from 300 to 600
+        // Drifted DDL: simulate SHOW CREATE where LIFETIME changed from 300 to 600.
+        // ClickHouse returns the long form LIFETIME(MIN 0 MAX N), so drifted DDL uses that format.
         let drifted_ddl = desired_ddl
             .replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY")
-            .replace("LIFETIME(MIN 0 MAX 300)", "LIFETIME(MIN 0 MAX 600)");
+            .replace("LIFETIME(300)", "LIFETIME(MIN 0 MAX 600)");
 
         let mut ddls = std::collections::HashMap::new();
         ddls.insert(format!("{}\x00{}", project_db, dict_name), drifted_ddl);
@@ -2080,11 +2081,12 @@ mod tests {
             .next()
             .unwrap()
             .to_create_if_not_exists_sql();
-        // Simulate SHOW CREATE DICTIONARY: same content, LAYOUT/LIFETIME swapped, no IF NOT EXISTS
+        // Simulate SHOW CREATE DICTIONARY: strip IF NOT EXISTS, swap LAYOUT/LIFETIME order,
+        // and normalize LIFETIME(N) → LIFETIME(MIN 0 MAX N) as ClickHouse does.
         let actual_ddl = desired_ddl
             .replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY")
             .replace(
-                "LAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)",
+                "LAYOUT(HASHED())\nLIFETIME(300)",
                 "LIFETIME(MIN 0 MAX 300)\nLAYOUT(HASHED())",
             );
 
