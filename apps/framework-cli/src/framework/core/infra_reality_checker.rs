@@ -152,10 +152,28 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
 
         // Walk the DDL from the opening `(` tracking depth to find the
         // matching `)` that closes the column list.
+        // Quote-aware: a `)` inside a DEFAULT value like `DEFAULT ')'` must not
+        // prematurely end the column block.
         let mut depth = 0usize;
+        let mut in_single = false;
+        let mut in_double = false;
         let mut end = start;
         for (off, ch) in ddl[start..].char_indices() {
+            if in_single {
+                if ch == '\'' {
+                    in_single = false;
+                }
+                continue;
+            }
+            if in_double {
+                if ch == '"' {
+                    in_double = false;
+                }
+                continue;
+            }
             match ch {
+                '\'' => in_single = true,
+                '"' => in_double = true,
                 '(' => depth += 1,
                 ')' => {
                     depth -= 1;
@@ -215,8 +233,10 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
                 match c {
                     '(' => depth += 1,
                     ')' => depth = depth.saturating_sub(1),
-                    '\'' if depth == 0 => in_single_quote = true,
-                    '"' if depth == 0 => in_double_quote = true,
+                    // Track quotes at any depth so a ')' inside SOURCE(MYSQL(PASSWORD 'p@ss)word'))
+                    // does not corrupt the depth counter.
+                    '\'' => in_single_quote = true,
+                    '"' => in_double_quote = true,
                     _ if depth == 0 => {
                         for &kw in keywords {
                             if text[abs_pos..].starts_with(kw) {
@@ -2318,6 +2338,20 @@ mod tests {
         let actual = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'old_src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
         let desired = "CREATE DICTIONARY IF NOT EXISTS `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'new_src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
         assert!(!dicts_ddl_equivalent(actual, desired));
+    }
+
+    #[test]
+    fn test_dicts_ddl_equivalent_column_default_with_paren() {
+        // A column DEFAULT containing ')' must not prematurely close the column block.
+        let ddl = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64,\n    `status` String DEFAULT ')'\n)\nPRIMARY KEY `id`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(dicts_ddl_equivalent(ddl, ddl));
+    }
+
+    #[test]
+    fn test_dicts_ddl_equivalent_source_password_with_paren() {
+        // A SOURCE credential containing ')' must not corrupt clause boundary detection.
+        let ddl = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD 'p@ss)word' DB 'mydb' TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(dicts_ddl_equivalent(ddl, ddl));
     }
 
     // ─── Structural mismatch detection tests ───────────────────────────────
