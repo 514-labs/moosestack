@@ -214,6 +214,7 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
             let mut depth: usize = 0;
             let mut in_single_quote = false;
             let mut in_double_quote = false;
+            let mut in_backtick = false;
 
             for (i, c) in text[from..].char_indices() {
                 let abs_pos = from + i;
@@ -230,13 +231,21 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
                     }
                     continue;
                 }
+                if in_backtick {
+                    if c == '`' {
+                        in_backtick = false;
+                    }
+                    continue;
+                }
                 match c {
                     '(' => depth += 1,
                     ')' => depth = depth.saturating_sub(1),
-                    // Track quotes at any depth so a ')' inside SOURCE(MYSQL(PASSWORD 'p@ss)word'))
-                    // does not corrupt the depth counter.
+                    // Track quotes/backticks at any depth so special chars inside
+                    // SOURCE credentials or backtick-quoted identifiers don't
+                    // corrupt depth tracking or trigger false keyword matches.
                     '\'' => in_single_quote = true,
                     '"' => in_double_quote = true,
+                    '`' => in_backtick = true,
                     _ if depth == 0 => {
                         for &kw in keywords {
                             if text[abs_pos..].starts_with(kw) {
@@ -2352,6 +2361,15 @@ mod tests {
         // A SOURCE credential containing ')' must not corrupt clause boundary detection.
         let ddl = "CREATE DICTIONARY `db`.`d` (\n    `id` UInt64\n)\nPRIMARY KEY `id`\nSOURCE(MYSQL(HOST 'localhost' PORT 3306 USER 'user' PASSWORD 'p@ss)word' DB 'mydb' TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
         assert!(dicts_ddl_equivalent(ddl, ddl));
+    }
+
+    #[test]
+    fn test_dicts_ddl_equivalent_backtick_keyword_identifier() {
+        // A column named `SOURCE` (a reserved keyword) in PRIMARY KEY must not be
+        // mistaken for the SOURCE clause — backtick-quoted identifiers must be skipped.
+        let actual = "CREATE DICTIONARY `db`.`d` (\n    `SOURCE` UInt64\n)\nPRIMARY KEY `SOURCE`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        let desired = "CREATE DICTIONARY IF NOT EXISTS `db`.`d` (\n    `SOURCE` UInt64\n)\nPRIMARY KEY `SOURCE`\nSOURCE(CLICKHOUSE(TABLE 'src'))\nLAYOUT(HASHED())\nLIFETIME(MIN 0 MAX 300)";
+        assert!(dicts_ddl_equivalent(actual, desired));
     }
 
     // ─── Structural mismatch detection tests ───────────────────────────────
