@@ -181,6 +181,62 @@ fn fill_hidden_credentials(actual: &str, desired: &str) -> String {
     result
 }
 
+/// Stateful depth-and-quote tracker for walking ClickHouse DDL text character
+/// by character.
+///
+/// Call [`advance`] once per character. When it returns `true` the character
+/// is "active" (not inside a quoted string) and `self.depth` reflects the paren
+/// depth *after* processing it. When it returns `false` the character was
+/// consumed as part of a quoted literal and the caller should skip it.
+#[derive(Default)]
+struct QuoteDepthState {
+    pub depth: usize,
+    in_single: bool,
+    in_double: bool,
+    in_backtick: bool,
+    skip_next_single: bool,
+}
+
+impl QuoteDepthState {
+    fn advance(&mut self, ch: char) -> bool {
+        if self.in_single {
+            if self.skip_next_single {
+                self.skip_next_single = false;
+                return false;
+            }
+            if ch == '\\' {
+                self.skip_next_single = true;
+                return false;
+            }
+            if ch == '\'' {
+                self.in_single = false;
+            }
+            return false;
+        }
+        if self.in_double {
+            if ch == '"' {
+                self.in_double = false;
+            }
+            return false;
+        }
+        if self.in_backtick {
+            if ch == '`' {
+                self.in_backtick = false;
+            }
+            return false;
+        }
+        match ch {
+            '\'' => self.in_single = true,
+            '"' => self.in_double = true,
+            '`' => self.in_backtick = true,
+            '(' => self.depth += 1,
+            ')' => self.depth = self.depth.saturating_sub(1),
+            _ => {}
+        }
+        true
+    }
+}
+
 /// Strips the `CREATE DICTIONARY …` header from each (everything before the
 /// first `(`), then for the column block and each subsequent clause:
 ///   - normalises whitespace (collapses runs of whitespace to a single space)
@@ -216,52 +272,15 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
         // matching `)` that closes the column list.
         // Quote-aware: a `)` inside a quoted value (single, double, or backtick)
         // must not prematurely end the column block.
-        let mut depth = 0usize;
-        let mut in_single = false;
-        let mut in_double = false;
-        let mut in_backtick = false;
-        let mut skip_next_single = false;
+        let mut qs = QuoteDepthState::default();
         let mut end = start;
         for (off, ch) in ddl[start..].char_indices() {
-            if in_single {
-                if skip_next_single {
-                    skip_next_single = false;
-                    continue;
-                }
-                if ch == '\\' {
-                    skip_next_single = true;
-                    continue;
-                }
-                if ch == '\'' {
-                    in_single = false;
-                }
+            if !qs.advance(ch) {
                 continue;
             }
-            if in_double {
-                if ch == '"' {
-                    in_double = false;
-                }
-                continue;
-            }
-            if in_backtick {
-                if ch == '`' {
-                    in_backtick = false;
-                }
-                continue;
-            }
-            match ch {
-                '\'' => in_single = true,
-                '"' => in_double = true,
-                '`' => in_backtick = true,
-                '(' => depth += 1,
-                ')' => {
-                    depth = depth.saturating_sub(1);
-                    if depth == 0 {
-                        end = start + off + ')'.len_utf8();
-                        break;
-                    }
-                }
-                _ => {}
+            if ch == ')' && qs.depth == 0 {
+                end = start + off + ')'.len_utf8();
+                break;
             }
         }
 
@@ -290,73 +309,33 @@ fn dicts_ddl_equivalent(actual_ddl: &str, desired_ddl: &str) -> bool {
             from: usize,
             keywords: &[&'a str],
         ) -> Option<(usize, &'a str)> {
-            let mut depth: usize = 0;
-            let mut in_single_quote = false;
-            let mut in_double_quote = false;
-            let mut in_backtick = false;
-            let mut skip_next_single = false;
-
+            let mut qs = QuoteDepthState::default();
             for (i, c) in text[from..].char_indices() {
                 let abs_pos = from + i;
-
-                if in_single_quote {
-                    if skip_next_single {
-                        skip_next_single = false;
-                        continue;
-                    }
-                    if c == '\\' {
-                        skip_next_single = true;
-                        continue;
-                    }
-                    if c == '\'' {
-                        in_single_quote = false;
-                    }
+                if !qs.advance(c) {
                     continue;
                 }
-                if in_double_quote {
-                    if c == '"' {
-                        in_double_quote = false;
-                    }
-                    continue;
-                }
-                if in_backtick {
-                    if c == '`' {
-                        in_backtick = false;
-                    }
-                    continue;
-                }
-                match c {
-                    '(' => depth += 1,
-                    ')' => depth = depth.saturating_sub(1),
-                    // Track quotes/backticks at any depth so special chars inside
-                    // SOURCE credentials or backtick-quoted identifiers don't
-                    // corrupt depth tracking or trigger false keyword matches.
-                    '\'' => in_single_quote = true,
-                    '"' => in_double_quote = true,
-                    '`' => in_backtick = true,
-                    _ if depth == 0 => {
-                        for &kw in keywords {
-                            if text[abs_pos..].starts_with(kw) {
-                                // Require a word boundary before (start of text or non-alnum/underscore)
-                                let prev_ok = text[..abs_pos]
-                                    .chars()
-                                    .next_back()
-                                    .map(|p| !p.is_alphanumeric() && p != '_')
-                                    .unwrap_or(true);
-                                // Require a word boundary after (end or non-alnum/underscore)
-                                let after = abs_pos + kw.len();
-                                let next_ok = text[after..]
-                                    .chars()
-                                    .next()
-                                    .map(|n| !n.is_alphanumeric() && n != '_')
-                                    .unwrap_or(true);
-                                if prev_ok && next_ok {
-                                    return Some((abs_pos, kw));
-                                }
+                if qs.depth == 0 {
+                    for &kw in keywords {
+                        if text[abs_pos..].starts_with(kw) {
+                            // Require a word boundary before (start of text or non-alnum/underscore)
+                            let prev_ok = text[..abs_pos]
+                                .chars()
+                                .next_back()
+                                .map(|p| !p.is_alphanumeric() && p != '_')
+                                .unwrap_or(true);
+                            // Require a word boundary after (end or non-alnum/underscore)
+                            let after = abs_pos + kw.len();
+                            let next_ok = text[after..]
+                                .chars()
+                                .next()
+                                .map(|n| !n.is_alphanumeric() && n != '_')
+                                .unwrap_or(true);
+                            if prev_ok && next_ok {
+                                return Some((abs_pos, kw));
                             }
                         }
                     }
-                    _ => {}
                 }
             }
             None
