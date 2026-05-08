@@ -629,7 +629,31 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
         );
     }
 
-    // Dictionaries have no mismatched entries (presence/absence only).
+    // Remove structurally mismatched dicts from the reconciled map so the diff
+    // against the target produces an Added change.  execute_create_dictionary uses
+    // CREATE OR REPLACE DICTIONARY, which overwrites the drifted CH definition.
+    for change in discrepancies.mismatched_dictionaries {
+        if let OlapChange::OlapDictionary(Change::Updated { before, .. }) = change {
+            let default_db = &reconciled_map.default_database;
+            let dict_db = before.database.as_deref().unwrap_or(default_db.as_str());
+            let dict_name = &before.name;
+            let key = reconciled_map
+                .olap_dictionaries
+                .iter()
+                .find(|(_, d)| {
+                    d.name == *dict_name
+                        && d.database.as_deref().unwrap_or(default_db.as_str()) == dict_db
+                })
+                .map(|(k, _)| k.clone());
+            if let Some(k) = key {
+                debug!(
+                    "Removing structurally mismatched dictionary '{}' to force reconciliation",
+                    k
+                );
+                reconciled_map.olap_dictionaries.remove(&k);
+            }
+        }
+    }
 
     info!("Infrastructure map successfully reconciled with actual database state");
     Ok(reconciled_map)
@@ -944,142 +968,9 @@ pub async fn plan_changes(
 mod tests {
     use super::*;
     use crate::framework::core::infrastructure::sql_resource::SqlResource;
-    use crate::framework::core::infrastructure::table::{
-        Column, ColumnType, IntType, OrderBy, Table,
-    };
-    use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
-    use crate::framework::core::partial_infrastructure_map::LifeCycle;
-    use crate::framework::versions::Version;
-    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-    use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
-    use crate::infrastructure::olap::OlapChangesError;
-    use crate::infrastructure::olap::OlapOperations;
-    use async_trait::async_trait;
+    use crate::framework::core::infrastructure::table::{Column, ColumnType, Table};
+    use crate::framework::core::test_helpers::*;
     use protobuf::Message;
-
-    // Mock OLAP client for testing
-    struct MockOlapClient {
-        tables: Vec<Table>,
-        sql_resources: Vec<SqlResource>,
-        dictionaries: Vec<String>,
-    }
-
-    #[async_trait]
-    impl OlapOperations for MockOlapClient {
-        async fn list_tables(
-            &self,
-            _db_name: &str,
-            _project: &Project,
-        ) -> Result<(Vec<Table>, Vec<TableWithUnsupportedType>), OlapChangesError> {
-            Ok((self.tables.clone(), vec![]))
-        }
-
-        async fn list_sql_resources(
-            &self,
-            _db_name: &str,
-            _default_database: &str,
-        ) -> Result<Vec<SqlResource>, OlapChangesError> {
-            Ok(self.sql_resources.clone())
-        }
-
-        async fn list_row_policies(
-            &self,
-            _db_name: &str,
-        ) -> Result<
-            Vec<crate::framework::core::infrastructure::select_row_policy::SelectRowPolicy>,
-            OlapChangesError,
-        > {
-            Ok(vec![])
-        }
-
-        async fn list_dictionaries(&self, _db_name: &str) -> Result<Vec<String>, OlapChangesError> {
-            Ok(self.dictionaries.clone())
-        }
-    }
-
-    // Helper function to create a test table
-    fn create_test_table(name: &str) -> Table {
-        Table {
-            name: name.to_string(),
-            columns: vec![Column {
-                name: "id".to_string(),
-                data_type: ColumnType::Int(IntType::Int64),
-                required: true,
-                unique: true,
-                primary_key: true,
-                default: None,
-                annotations: vec![],
-                comment: None,
-                ttl: None,
-                codec: None,
-                materialized: None,
-                alias: None,
-            }],
-            order_by: OrderBy::Fields(vec!["id".to_string()]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: Some(Version::from_string("1.0.0".to_string())),
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DataModel,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            constraints: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-            seed_filter: Default::default(),
-        }
-    }
-
-    // Helper function to create a test project
-    fn create_test_project() -> Project {
-        Project {
-            language: crate::framework::languages::SupportedLanguages::Typescript,
-            redpanda_config: crate::infrastructure::stream::kafka::models::KafkaConfig::default(),
-            clickhouse_config: crate::infrastructure::olap::clickhouse::ClickHouseConfig {
-                db_name: "test".to_string(),
-                user: "test".to_string(),
-                password: "test".to_string(),
-                use_ssl: false,
-                host: "localhost".to_string(),
-                host_port: 18123,
-                native_port: 9000,
-                ..Default::default()
-            },
-            http_server_config: crate::cli::local_webserver::LocalWebserverConfig::default(),
-            redis_config: crate::infrastructure::redis::redis_client::RedisConfig::default(),
-            git_config: crate::utilities::git::GitConfig::default(),
-            temporal_config:
-                crate::infrastructure::orchestration::temporal::TemporalConfig::default(),
-            state_config: crate::project::StateConfig::default(),
-            migration_config: crate::project::MigrationConfig::default(),
-            language_project_config: crate::project::LanguageProjectConfig::default(),
-            project_location: std::path::PathBuf::new(),
-            is_production: false,
-            log_payloads: false,
-            supported_old_versions: std::collections::HashMap::new(),
-            jwt: None,
-            authentication: crate::project::AuthenticationConfig::default(),
-
-            features: crate::project::ProjectFeatures::default(),
-            load_infra: None,
-
-            typescript_config: crate::project::TypescriptConfig::default(),
-            source_dir: crate::project::default_source_dir(),
-            docker_config: crate::project::DockerConfig::default(),
-            watcher_config: crate::cli::watcher::WatcherConfig::default(),
-            dev: crate::project::DevConfig::default(),
-        }
-    }
 
     #[tokio::test]
     async fn test_reconcile_with_reality_unmapped_table() {
@@ -1089,8 +980,7 @@ mod tests {
         // Create mock OLAP client with one table
         let mock_client = MockOlapClient {
             tables: vec![table.clone()],
-            sql_resources: vec![],
-            dictionaries: vec![],
+            ..Default::default()
         };
 
         // Create empty infrastructure map (no tables)
@@ -1129,8 +1019,7 @@ mod tests {
             &empty_filter,
             MockOlapClient {
                 tables: vec![table.clone()],
-                sql_resources: vec![],
-                dictionaries: vec![],
+                ..Default::default()
             },
         )
         .await
@@ -1158,8 +1047,7 @@ mod tests {
             &filter_with_table,
             MockOlapClient {
                 tables: vec![table.clone()],
-                sql_resources: vec![],
-                dictionaries: vec![],
+                ..Default::default()
             },
         )
         .await
@@ -1175,11 +1063,7 @@ mod tests {
         let table = create_test_table("missing_table");
 
         // Create mock OLAP client with no tables
-        let mock_client = MockOlapClient {
-            tables: vec![],
-            sql_resources: vec![],
-            dictionaries: vec![],
-        };
+        let mock_client = MockOlapClient::default();
 
         // Create infrastructure map with one table
         let mut infra_map = InfrastructureMap::default();
@@ -1204,11 +1088,7 @@ mod tests {
         assert_eq!(discrepancies.missing_tables[0], "missing_table");
 
         // Create another mock client for the reconciliation
-        let reconcile_mock_client = MockOlapClient {
-            tables: vec![],
-            sql_resources: vec![],
-            dictionaries: vec![],
-        };
+        let reconcile_mock_client = MockOlapClient::default();
 
         let filter = ReconciliationFilter {
             table_ids: HashSet::new(),
@@ -1261,8 +1141,7 @@ mod tests {
                 database: Some(db_name.clone()),
                 ..actual_table.clone()
             }],
-            sql_resources: vec![],
-            dictionaries: vec![],
+            ..Default::default()
         };
 
         // Create infrastructure map with the infra table (no extra column)
@@ -1293,8 +1172,7 @@ mod tests {
                 database: Some(db_name.clone()),
                 ..actual_table.clone()
             }],
-            sql_resources: vec![],
-            dictionaries: vec![],
+            ..Default::default()
         };
 
         let filter = ReconciliationFilter {
@@ -1329,8 +1207,7 @@ mod tests {
         // Create mock OLAP client with the table
         let mock_client = MockOlapClient {
             tables: vec![table.clone()],
-            sql_resources: vec![],
-            dictionaries: vec![],
+            ..Default::default()
         };
 
         // Create infrastructure map with the same table
@@ -1357,8 +1234,7 @@ mod tests {
         // Create another mock client for reconciliation
         let reconcile_mock_client = MockOlapClient {
             tables: vec![table.clone()],
-            sql_resources: vec![],
-            dictionaries: vec![],
+            ..Default::default()
         };
 
         let filter = ReconciliationFilter {
@@ -1421,11 +1297,7 @@ mod tests {
         );
 
         // Also verify that reconciliation preserves the database name
-        let mock_client = MockOlapClient {
-            tables: vec![],
-            sql_resources: vec![],
-            dictionaries: vec![],
-        };
+        let mock_client = MockOlapClient::default();
 
         let empty_filter = ReconciliationFilter {
             table_ids: HashSet::new(),
@@ -1485,11 +1357,7 @@ mod tests {
         );
 
         // Now test reconciliation - this is where the fix should be applied
-        let mock_client = MockOlapClient {
-            tables: vec![],
-            sql_resources: vec![],
-            dictionaries: vec![],
-        };
+        let mock_client = MockOlapClient::default();
 
         let empty_filter = ReconciliationFilter {
             table_ids: HashSet::new(),
@@ -1586,8 +1454,7 @@ mod tests {
 
         let mock_client = MockOlapClient {
             tables: vec![table_from_reality],
-            sql_resources: vec![],
-            dictionaries: vec![],
+            ..Default::default()
         };
 
         // Create infrastructure map with the table including cluster_name
@@ -1652,8 +1519,7 @@ mod tests {
         // Create mock OLAP client with the reality table
         let mock_client = MockOlapClient {
             tables: vec![reality_table.clone()],
-            sql_resources: vec![],
-            dictionaries: vec![],
+            ..Default::default()
         };
 
         // Create infrastructure map with the infra table
@@ -1713,9 +1579,8 @@ mod tests {
         };
 
         let mock_client = MockOlapClient {
-            tables: vec![],
             sql_resources: vec![sql_resource.clone()],
-            dictionaries: vec![],
+            ..Default::default()
         };
 
         let infra_map = InfrastructureMap::default();
@@ -1766,9 +1631,8 @@ mod tests {
         };
 
         let mock_client = MockOlapClient {
-            tables: vec![],
             sql_resources: vec![view_a.clone(), view_b.clone()],
-            dictionaries: vec![],
+            ..Default::default()
         };
 
         let infra_map = InfrastructureMap::default();
@@ -1825,9 +1689,8 @@ mod tests {
         };
 
         let mock_client = MockOlapClient {
-            tables: vec![],
             sql_resources: vec![reality_view.clone()],
-            dictionaries: vec![],
+            ..Default::default()
         };
 
         // Create infra map with the existing view
@@ -2147,6 +2010,111 @@ mod tests {
         assert!(
             de1 < cu,
             "Events_1_0 drop ({de1}) must come before Users_1_0 create ({cu})"
+        );
+    }
+
+    // ─── Dictionary reconciliation tests ────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_reconcile_mismatched_dict_removed_from_map() {
+        // A dict that exists in reality but with drifted DDL should be removed
+        // from the reconciled map so that the subsequent diff generates an Added change.
+        let project = create_test_project();
+        let infra_map = make_infra_map_with_dict("dict_foo");
+        let dict_name = "dict_foo";
+        let project_db = &project.clickhouse_config.db_name; // "test"
+
+        // The desired DDL (from the map)
+        let desired_ddl = infra_map
+            .olap_dictionaries
+            .values()
+            .next()
+            .unwrap()
+            .to_create_if_not_exists_sql();
+        // Drifted DDL: simulate SHOW CREATE where LIFETIME changed from 300 to 600.
+        // ClickHouse returns the long form LIFETIME(MIN 0 MAX N), so drifted DDL uses that format.
+        let drifted_ddl = desired_ddl
+            .replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY")
+            .replace("LIFETIME(300)", "LIFETIME(MIN 0 MAX 600)");
+
+        let mut ddls = std::collections::HashMap::new();
+        ddls.insert(format!("{}\x00{}", project_db, dict_name), drifted_ddl);
+
+        let mock_client = MockOlapClient {
+            dictionaries: vec![dict_name.to_string()],
+            dictionary_ddls: ddls,
+            ..Default::default()
+        };
+
+        let filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
+        };
+        let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
+            .await
+            .unwrap();
+
+        // The mismatched dict must be absent from the reconciled map so the diff
+        // against the target map will generate an Added change.
+        assert!(
+            reconciled.olap_dictionaries.is_empty(),
+            "mismatched dict should be removed from reconciled map, got: {:?}",
+            reconciled.olap_dictionaries.keys().collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_matched_dict_stays_in_map() {
+        // A dict whose DDL matches reality must remain in the reconciled map.
+        let project = create_test_project();
+        let infra_map = make_infra_map_with_dict("dict_bar");
+        let dict_name = "dict_bar";
+        let project_db = &project.clickhouse_config.db_name;
+
+        let desired_ddl = infra_map
+            .olap_dictionaries
+            .values()
+            .next()
+            .unwrap()
+            .to_create_if_not_exists_sql();
+        // Simulate SHOW CREATE DICTIONARY: strip IF NOT EXISTS, swap LAYOUT/LIFETIME order,
+        // and normalize LIFETIME(N) → LIFETIME(MIN 0 MAX N) as ClickHouse does.
+        let actual_ddl = desired_ddl
+            .replace("CREATE DICTIONARY IF NOT EXISTS", "CREATE DICTIONARY")
+            .replace(
+                "LAYOUT(HASHED())\nLIFETIME(300)",
+                "LIFETIME(MIN 0 MAX 300)\nLAYOUT(HASHED())",
+            );
+
+        let mut ddls = std::collections::HashMap::new();
+        ddls.insert(format!("{}\x00{}", project_db, dict_name), actual_ddl);
+
+        let mock_client = MockOlapClient {
+            dictionaries: vec![dict_name.to_string()],
+            dictionary_ddls: ddls,
+            ..Default::default()
+        };
+
+        let filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+            select_row_policy_ids: HashSet::new(),
+            dictionary_ids: HashSet::new(),
+        };
+        let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            reconciled.olap_dictionaries.len(),
+            1,
+            "matched dict should remain in reconciled map"
         );
     }
 }

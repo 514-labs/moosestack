@@ -2069,19 +2069,18 @@ async fn execute_drop_row_policy(
     Ok(())
 }
 
-/// Execute a CREATE DICTIONARY IF NOT EXISTS operation.
+/// Shared implementation for create and replace dictionary operations.
 ///
 /// Dictionary DDL can contain credentials (PASSWORD, SECRET_ACCESS_KEY, etc.) in the
 /// SOURCE clause. We bypass `run_query` (which logs the SQL at debug level) and call
 /// `build_query(...).execute()` directly so the raw SQL is never written to logs.
-async fn execute_create_dictionary(
-    _db_name: &str,
+async fn execute_dictionary_upsert(
+    operation: &str,
     dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    let sql = dict.to_create_if_not_exists_sql();
-    // Log the operation without the SQL body to avoid leaking credentials.
-    tracing::debug!("Creating dictionary: {} (SQL redacted)", dict.name);
+    let sql = dict.to_replace_sql();
+    tracing::debug!("{} dictionary: {} (SQL redacted)", operation, dict.name);
     build_query(&client.client, &sql)
         .execute()
         .await
@@ -2092,27 +2091,23 @@ async fn execute_create_dictionary(
     Ok(())
 }
 
-/// Execute a CREATE OR REPLACE DICTIONARY operation.
-///
-/// Dictionary DDL can contain credentials (PASSWORD, SECRET_ACCESS_KEY, etc.) in the
-/// SOURCE clause. We bypass `run_query` (which logs the SQL at debug level) and call
-/// `build_query(...).execute()` directly so the raw SQL is never written to logs.
+// Use CREATE OR REPLACE for both create and replace — structurally mismatched dicts
+// are removed from the reconciled map by check_reality so that the subsequent diff
+// generates an Added change, which this function resolves via CREATE OR REPLACE.
+async fn execute_create_dictionary(
+    _db_name: &str,
+    dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    execute_dictionary_upsert("Creating", dict, client).await
+}
+
 async fn execute_replace_dictionary(
     _db_name: &str,
     dict: &crate::infrastructure::olap::clickhouse::dictionary::OlapDictionary,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    let sql = dict.to_replace_sql();
-    // Log the operation without the SQL body to avoid leaking credentials.
-    tracing::debug!("Replacing dictionary: {} (SQL redacted)", dict.name);
-    build_query(&client.client, &sql)
-        .execute()
-        .await
-        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
-            error: e,
-            resource: Some(dict.name.clone()),
-        })?;
-    Ok(())
+    execute_dictionary_upsert("Replacing", dict, client).await
 }
 
 /// Execute a DROP DICTIONARY IF EXISTS operation.
@@ -3429,6 +3424,38 @@ impl OlapOperations for ConfiguredDBClient {
             names.len()
         );
         Ok(names)
+    }
+
+    async fn show_create_dictionary(
+        &self,
+        db_name: &str,
+        dict_name: &str,
+    ) -> Result<String, OlapChangesError> {
+        #[derive(clickhouse::Row, serde::Deserialize)]
+        struct ShowCreateRow {
+            statement: String,
+        }
+
+        let qualified_name = format!("`{}`.`{}`", db_name, dict_name);
+        let sql = format!("SHOW CREATE DICTIONARY {qualified_name}");
+
+        let mut cursor = self
+            .client
+            .query(&sql)
+            .fetch::<ShowCreateRow>()
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?;
+
+        match cursor
+            .next()
+            .await
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
+        {
+            Some(row) => Ok(row.statement),
+            None => Err(OlapChangesError::DatabaseError(format!(
+                "SHOW CREATE DICTIONARY returned no rows for `{}`.`{}`",
+                db_name, dict_name
+            ))),
+        }
     }
 
     /// Normalizes SQL using ClickHouse's native formatQuerySingleLine function.
