@@ -1348,21 +1348,58 @@ struct HandledDependencies {
     readded_projections: HashSet<String>,
 }
 
-/// Returns true if the diff between `before` and `after` requires dependent
-/// indexes/projections to be dropped before `ALTER TABLE ... MODIFY COLUMN`.
+/// Returns `true` if `before` and `after` differ in any field other than `comment`.
 ///
-/// ClickHouse rejects `MODIFY COLUMN` on an indexed column only when the
-/// modification changes on-disk layout or evaluated values (e.g. `data_type`,
-/// `default`, `codec`, `materialized`). A pure `comment` change is accepted
-/// without dropping the dependent, and re-creating the index would force
-/// ClickHouse to rebuild it lazily on merges, degrading data-skipping until then.
+/// `ALTER TABLE ... MODIFY COLUMN` is rejected by ClickHouse on an indexed
+/// column whenever the modification changes on-disk layout or evaluated values
+/// (`data_type`, `default`, `codec`, `materialized`, etc.). A pure `comment`
+/// change is the one case ClickHouse accepts without dropping dependent
+/// indexes/projections — and re-creating those would force a lazy index
+/// rebuild on merges, degrading data-skipping on existing parts until then.
 ///
-/// Conservatively, any field other than `comment` differing forces the drop,
-/// so new `Column` fields default to the safe behaviour.
+/// Implemented via exhaustive destructuring so that adding a new `Column`
+/// field is a compile error: the author must explicitly decide whether the
+/// field belongs in the "requires drop" set.
 fn column_modify_requires_dependent_drop(before: &Column, after: &Column) -> bool {
-    let mut normalised = before.clone();
-    normalised.comment = after.comment.clone();
-    normalised != *after
+    let Column {
+        name: _,
+        comment: _, // metadata-only; ClickHouse accepts the MODIFY without dropping dependents
+        data_type: b_data_type,
+        required: b_required,
+        unique: b_unique,
+        primary_key: b_primary_key,
+        default: b_default,
+        annotations: b_annotations,
+        ttl: b_ttl,
+        codec: b_codec,
+        materialized: b_materialized,
+        alias: b_alias,
+    } = before;
+    let Column {
+        name: _,
+        comment: _,
+        data_type: a_data_type,
+        required: a_required,
+        unique: a_unique,
+        primary_key: a_primary_key,
+        default: a_default,
+        annotations: a_annotations,
+        ttl: a_ttl,
+        codec: a_codec,
+        materialized: a_materialized,
+        alias: a_alias,
+    } = after;
+
+    b_data_type != a_data_type
+        || b_required != a_required
+        || b_unique != a_unique
+        || b_primary_key != a_primary_key
+        || b_default != a_default
+        || b_annotations != a_annotations
+        || b_ttl != a_ttl
+        || b_codec != a_codec
+        || b_materialized != a_materialized
+        || b_alias != a_alias
 }
 
 /// Emit drop + re-add ops for every index/projection that references `column_name`.
