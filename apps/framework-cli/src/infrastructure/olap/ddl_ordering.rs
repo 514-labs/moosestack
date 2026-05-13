@@ -1348,6 +1348,23 @@ struct HandledDependencies {
     readded_projections: HashSet<String>,
 }
 
+/// Returns true if the diff between `before` and `after` requires dependent
+/// indexes/projections to be dropped before `ALTER TABLE ... MODIFY COLUMN`.
+///
+/// ClickHouse rejects `MODIFY COLUMN` on an indexed column only when the
+/// modification changes on-disk layout or evaluated values (e.g. `data_type`,
+/// `default`, `codec`, `materialized`). A pure `comment` change is accepted
+/// without dropping the dependent, and re-creating the index would force
+/// ClickHouse to rebuild it lazily on merges, degrading data-skipping until then.
+///
+/// Conservatively, any field other than `comment` differing forces the drop,
+/// so new `Column` fields default to the safe behaviour.
+fn column_modify_requires_dependent_drop(before: &Column, after: &Column) -> bool {
+    let mut normalised = before.clone();
+    normalised.comment = after.comment.clone();
+    normalised != *after
+}
+
 /// Emit drop + re-add ops for every index/projection that references `column_name`.
 ///
 /// Inserts into `handled` so that `process_index_changes` / `process_projection_changes`
@@ -1459,16 +1476,26 @@ fn process_column_changes(
                 before: before_col,
                 after: after_col,
             } => {
-                // Drop dependent indexes/projections before modifying the column
-                drop_column_dependents(&mut plan, before, &before_col.name, &mut handled);
+                // Only drop dependents when the modification actually requires it.
+                // Comment-only changes are accepted by ClickHouse without dropping
+                // the index, and avoiding the drop preserves data-skipping on
+                // existing parts.
+                let requires_drop = column_modify_requires_dependent_drop(before_col, after_col);
+
+                if requires_drop {
+                    // Drop dependent indexes/projections before modifying the column
+                    drop_column_dependents(&mut plan, before, &before_col.name, &mut handled);
+                }
 
                 plan.setup_ops
                     .push(process_column_modification(after, before_col, after_col));
 
-                // Defer re-adds so they come after ALL column modifications,
-                // preventing ClickHouse from rejecting a later MODIFY COLUMN
-                // on a column whose dependent index was already re-added.
-                columns_with_dependents_to_readd.push(&after_col.name);
+                if requires_drop {
+                    // Defer re-adds so they come after ALL column modifications,
+                    // preventing ClickHouse from rejecting a later MODIFY COLUMN
+                    // on a column whose dependent index was already re-added.
+                    columns_with_dependents_to_readd.push(&after_col.name);
+                }
             }
             ColumnChange::Renamed {
                 before: before_col,
@@ -4790,6 +4817,127 @@ mod tests {
         assert!(
             modify_pos.unwrap() < add_index_pos.unwrap(),
             "ModifyTableColumn must come before AddTableIndex"
+        );
+    }
+
+    #[test]
+    fn test_modify_column_comment_only_change_preserves_dependent_index() {
+        // Regression test: a comment-only column change must NOT churn dependent
+        // skip-indexes. ClickHouse accepts the MODIFY without dropping the index,
+        // and re-creating the index forces a lazy rebuild that degrades data-skipping.
+        let before_col = make_column("_time_observed", ColumnType::String);
+        let mut after_col = before_col.clone();
+        after_col.comment = Some("Time the event was observed at source".to_string());
+
+        let index = TableIndex {
+            name: "index_time_observed_v1".to_string(),
+            expression: "_time_observed".to_string(),
+            index_type: "minmax".to_string(),
+            arguments: vec![],
+            granularity: 3,
+        };
+
+        let before = create_test_table(
+            "network_flow_stored",
+            vec![before_col.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+        let after = create_test_table(
+            "network_flow_stored",
+            vec![after_col.clone()],
+            vec![index.clone()],
+            vec![],
+        );
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: before_col,
+            after: after_col,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let modify_count = plan
+            .setup_ops
+            .iter()
+            .filter(|op| matches!(op, AtomicOlapOperation::ModifyTableColumn { .. }))
+            .count();
+        assert_eq!(
+            modify_count, 1,
+            "Expected exactly one ModifyTableColumn, got: {:?}",
+            plan.setup_ops
+        );
+
+        let has_drop_index = plan
+            .teardown_ops
+            .iter()
+            .any(|op| matches!(op, AtomicOlapOperation::DropTableIndex { .. }));
+        assert!(
+            !has_drop_index,
+            "Expected zero DropTableIndex ops for a comment-only change, got: {:?}",
+            plan.teardown_ops
+        );
+
+        let has_add_index = plan
+            .setup_ops
+            .iter()
+            .any(|op| matches!(op, AtomicOlapOperation::AddTableIndex { .. }));
+        assert!(
+            !has_add_index,
+            "Expected zero AddTableIndex ops for a comment-only change, got: {:?}",
+            plan.setup_ops
+        );
+    }
+
+    #[test]
+    fn test_modify_column_comment_only_change_preserves_dependent_projection() {
+        let before_col = make_column("src_endpoint_ip", ColumnType::String);
+        let mut after_col = before_col.clone();
+        after_col.comment = Some("Source endpoint IP".to_string());
+
+        let projection = TableProjection {
+            name: "proj_src_ip".to_string(),
+            body: "SELECT * ORDER BY src_endpoint_ip".to_string(),
+        };
+
+        let before = create_test_table(
+            "test_table",
+            vec![before_col.clone()],
+            vec![],
+            vec![projection.clone()],
+        );
+        let after = create_test_table(
+            "test_table",
+            vec![after_col.clone()],
+            vec![],
+            vec![projection.clone()],
+        );
+
+        let column_changes = vec![ColumnChange::Updated {
+            before: before_col,
+            after: after_col,
+        }];
+
+        let plan = handle_table_update(&before, &after, &column_changes);
+
+        let has_drop_proj = plan
+            .teardown_ops
+            .iter()
+            .any(|op| matches!(op, AtomicOlapOperation::DropTableProjection { .. }));
+        assert!(
+            !has_drop_proj,
+            "Expected zero DropTableProjection ops for a comment-only change, got: {:?}",
+            plan.teardown_ops
+        );
+
+        let has_add_proj = plan
+            .setup_ops
+            .iter()
+            .any(|op| matches!(op, AtomicOlapOperation::AddTableProjection { .. }));
+        assert!(
+            !has_add_proj,
+            "Expected zero AddTableProjection ops for a comment-only change, got: {:?}",
+            plan.setup_ops
         );
     }
 
