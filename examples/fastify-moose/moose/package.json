@@ -20,13 +20,13 @@
     "moose": "moose-cli"
   },
   "dependencies": {
-    "@514labs/moose-lib": "0.6.483",
+    "@514labs/moose-lib": "0.6.532",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "ts-patch": "^3.3.0",
     "typia": "^10.1.0"
   },
   "devDependencies": {
-    "@514labs/moose-cli": "0.6.483",
+    "@514labs/moose-cli": "0.6.531",
     "@types/node": "^20",
     "typescript": "^5.9.3"
   }
