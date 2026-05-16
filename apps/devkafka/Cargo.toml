@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-kafka-protocol = { version = "0.16", features = ["broker", "messages_enums"] }
+kafka-protocol = { version = "0.17", features = ["broker", "messages_enums"] }
 tokio = { version = "1", features = ["full"] }
 bytes = "1"
 uuid = { version = "1", features = ["v4"] }
@@ -16,4 +16,4 @@ crc32c = "0.6"
 tokio-util = { version = "0.7", features = ["rt"] }
 
 [dev-dependencies]
-kafka-protocol = { version = "0.16", features = ["client", "broker", "messages_enums"] }
+kafka-protocol = { version = "0.17", features = ["client", "broker", "messages_enums"] }
