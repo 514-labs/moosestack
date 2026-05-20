@@ -324,6 +324,7 @@ jobs:
 
       - name: Run sccache-cache
         if: ${{ matrix.build.OS != 'ubuntu-22-8-core' }}
+        continue-on-error: true
         uses: mozilla-actions/sccache-action@v0.0.9
         with:
           # sccache-action points at the latest sccache version
