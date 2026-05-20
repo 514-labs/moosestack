@@ -60,6 +60,7 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 // Path to npm-installed CLI (will be set by checkLatestPublishedCLI)
 let LATEST_CLI_PATH: string;
 let CLI_INSTALL_DIR: string;
+let LATEST_MATCHING_NPM_VERSION: string;
 
 const testLogger = logger.scope("backward-compatibility-test");
 const NPM_PROPAGATION_MAX_ATTEMPTS = 5;
@@ -72,12 +73,57 @@ system.forceSearchAttributesCacheRefreshOnRead:
     constraints: {}
 `;
 
+function parseNpmVersions(stdout: string): string[] {
+  const parsed = JSON.parse(stdout.trim());
+  return Array.isArray(parsed) ? parsed : [parsed];
+}
+
+function isStableVersion(version: string): boolean {
+  return /^\d+\.\d+\.\d+$/.test(version);
+}
+
+function compareStableVersions(a: string, b: string): number {
+  const aParts = a.split(".").map(Number);
+  const bParts = b.split(".").map(Number);
+
+  for (let i = 0; i < 3; i += 1) {
+    const diff = aParts[i] - bParts[i];
+    if (diff !== 0) return diff;
+  }
+
+  return 0;
+}
+
+async function getLatestMatchingNpmVersion(): Promise<string> {
+  const [cliVersionsResult, libVersionsResult] = await Promise.all([
+    execAsync("npm view @514labs/moose-cli versions --json"),
+    execAsync("npm view @514labs/moose-lib versions --json"),
+  ]);
+
+  const cliVersions = new Set(
+    parseNpmVersions(cliVersionsResult.stdout).filter(isStableVersion),
+  );
+  const matchingVersions = parseNpmVersions(libVersionsResult.stdout)
+    .filter(isStableVersion)
+    .filter((version) => cliVersions.has(version))
+    .sort(compareStableVersions);
+
+  const latestMatchingVersion = matchingVersions[matchingVersions.length - 1];
+  if (!latestMatchingVersion) {
+    throw new Error(
+      "Cannot find a stable npm version published for both @514labs/moose-cli and @514labs/moose-lib",
+    );
+  }
+
+  return latestMatchingVersion;
+}
+
 /**
- * Install and check the latest published version of moose-cli
+ * Install and check the latest matching published version of moose-cli
  * Uses pnpm for consistency with the monorepo
  */
 async function checkLatestPublishedCLI(): Promise<void> {
-  testLogger.info("Installing latest published moose-cli from npm...");
+  testLogger.info("Installing latest matching published moose-cli from npm...");
 
   try {
     if (CLI_INSTALL_DIR) {
@@ -89,9 +135,14 @@ async function checkLatestPublishedCLI(): Promise<void> {
     CLI_INSTALL_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "moose-cli-"));
     testLogger.info(`Installing CLI to temp directory: ${CLI_INSTALL_DIR}`);
 
+    LATEST_MATCHING_NPM_VERSION = await getLatestMatchingNpmVersion();
+    testLogger.info(
+      `Latest stable version published for both CLI and lib: ${LATEST_MATCHING_NPM_VERSION}`,
+    );
+
     // Install CLI using pnpm (consistent with monorepo)
     const installResult = await execAsync(
-      "pnpm add @514labs/moose-cli@latest",
+      `pnpm add @514labs/moose-cli@${LATEST_MATCHING_NPM_VERSION}`,
       { cwd: CLI_INSTALL_DIR },
     );
     testLogger.info("pnpm install output:", installResult.stdout);
@@ -112,13 +163,13 @@ async function checkLatestPublishedCLI(): Promise<void> {
     const { stdout: version } = await execAsync(
       `"${LATEST_CLI_PATH}" --version`,
     );
-    testLogger.info("Latest published CLI version:", version.trim());
+    testLogger.info("Latest matching published CLI version:", version.trim());
   } catch (error: any) {
     testLogger.error("Failed to install latest CLI:", error.message);
     if (error.stdout) testLogger.error("stdout:", error.stdout);
     if (error.stderr) testLogger.error("stderr:", error.stderr);
     throw new Error(
-      "Cannot install latest published CLI for backward compatibility test",
+      "Cannot install latest matching published CLI for backward compatibility test",
     );
   }
 }
@@ -189,7 +240,7 @@ async function verifyTypeScriptVersionsMatch(
 }
 
 /**
- * Ensure generated TypeScript project uses latest published Moose packages.
+ * Ensure generated TypeScript project uses the latest matching published Moose packages.
  */
 function enforceLatestTypeScriptDependencies(projectDir: string): void {
   const packageJsonPath = path.join(projectDir, "package.json");
@@ -198,9 +249,10 @@ function enforceLatestTypeScriptDependencies(projectDir: string): void {
   const dependencies = (packageJson.dependencies ??= {});
   const devDependencies = (packageJson.devDependencies ??= {});
 
-  // Enforce latest Moose packages for backward compatibility initialization.
-  dependencies["@514labs/moose-lib"] = "latest";
-  devDependencies["@514labs/moose-cli"] = "latest";
+  // Enforce the latest coherent release pair for backward compatibility
+  // initialization. A partially failed release can skew npm latest tags.
+  dependencies["@514labs/moose-lib"] = LATEST_MATCHING_NPM_VERSION;
+  devDependencies["@514labs/moose-cli"] = LATEST_MATCHING_NPM_VERSION;
 
   // Keep compatibility alias used across e2e tests.
   if (dependencies["@confluentinc/kafka-javascript"]) {
@@ -283,7 +335,7 @@ function startLegacyTemporalConfigWriter(projectDir: string): () => void {
 }
 
 /**
- * Setup TypeScript project with latest npm moose-lib
+ * Setup TypeScript project with latest matching npm moose-lib
  */
 async function setupTypeScriptProjectWithLatestNpm(
   projectDir: string,
@@ -292,7 +344,7 @@ async function setupTypeScriptProjectWithLatestNpm(
 ): Promise<void> {
   for (let attempt = 1; attempt <= NPM_PROPAGATION_MAX_ATTEMPTS; attempt += 1) {
     testLogger.info(
-      `Initializing TypeScript project with latest npm moose-cli (attempt ${attempt}/${NPM_PROPAGATION_MAX_ATTEMPTS})...`,
+      `Initializing TypeScript project with latest matching npm moose-cli (attempt ${attempt}/${NPM_PROPAGATION_MAX_ATTEMPTS})...`,
     );
 
     try {
@@ -312,7 +364,7 @@ async function setupTypeScriptProjectWithLatestNpm(
       }
 
       testLogger.info(
-        "Installing dependencies with pnpm (using latest @514labs/moose-lib)...",
+        "Installing dependencies with pnpm (using latest matching @514labs/moose-lib)...",
       );
 
       enforceLatestTypeScriptDependencies(projectDir);
@@ -457,7 +509,7 @@ describe("Backward Compatibility Tests", function () {
   before(async function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-    // Check latest published CLI is available
+    // Check latest matching published CLI is available
     await checkLatestPublishedCLI();
 
     // Verify new CLI is built

@@ -40,12 +40,28 @@ cp "../../target/${build_target}/release/${current_bin}" "../../target/${build_t
 cp "../../target/${build_target}/release/${current_bin}" "${node_pkg}/bin"
 # publish the package
 cd "${node_pkg}"
+package_name=$(node -p "require('./package.json').name")
+package_version=$(node -p "require('./package.json').version")
 # For CI builds (TAG_LATEST=false), publish with version-specific tag
 # For release builds (TAG_LATEST=true), publish and update the 'latest' tag
 if [ "${TAG_LATEST}" = "true" ]; then
     # Release build - publish and update 'latest' tag
+    if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
+        current_latest=$(npm view "${package_name}" dist-tags.latest 2>/dev/null || true)
+        if [ "${current_latest}" = "${package_version}" ]; then
+            echo "${package_name}@${package_version} is already published and latest already points to it"
+            exit 0
+        fi
+
+        echo "${package_name}@${package_version} is already published, but latest points to ${current_latest}"
+        exit 1
+    fi
     npm publish --access public
 else
     # CI build - publish with dev tag (doesn't update 'latest')
+    if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
+        echo "${package_name}@${package_version} is already published; skipping publish"
+        exit 0
+    fi
     npm publish --access public --tag dev
 fi
