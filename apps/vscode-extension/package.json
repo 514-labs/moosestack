@@ -75,7 +75,7 @@
     "publish:openvsx": "pnpm run build && npx ovsx publish"
   },
   "devDependencies": {
-    "@eslint/js": "9.39.2",
+    "@eslint/js": "10.0.1",
     "@repo/ts-config": "workspace:^",
     "@types/node": "catalog:",
     "@types/vscode": "^1.90.0",
