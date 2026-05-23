@@ -19,7 +19,7 @@ posthog514client-rs = { path = "../../packages/posthog514client-rs" }
 sqlparser = { git = "https://github.com/514-labs/datafusion-sqlparser-rs", rev = "f84bd06", features = ["visitor"] }
 itertools = "0.13.0"
 openssl = { version = "0.10", features = ["vendored"] }
-clap = { version = "4.3.17", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 thiserror = "1.0.59"
 hyper = { version = "1", features = ["full"] }
@@ -34,31 +34,31 @@ home = "0.5.5"
 clickhouse = { version = "0.14.0", features = ["uuid", "native-tls"] }
 handlebars = "5.1"
 rdkafka = { version = "0.38", features = ["ssl"] }
-rdkafka-sys = "4.7" # Needed for rd_kafka_wait_destroyed
+rdkafka-sys = "4.10" # Needed for rd_kafka_wait_destroyed
 convert_case = "0.6.0"
 humantime = "2.1.0"
-uuid = { version = "1.6", features = ["v4", "serde"] }
-serde_json = { version = "1.0.133", features = ["preserve_order"] }
+uuid = { version = "1.23", features = ["v4", "serde"] }
+serde_json = { version = "1.0.150", features = ["preserve_order"] }
 serde_urlencoded = "0.7"
 semver = "1.0"
 base64 = "0.22.0"
 async-recursion = "1.1.0"
-hyper-util = { version = "0.1.17", features = ["full"] }
+hyper-util = { version = "0.1.20", features = ["full"] }
 http-body-util = "0.1"
 lazy_static = "1.4.0"
 anyhow = "1.0"
 git2 = { version = "0.18.1", features = ["vendored-libgit2"] }
-regex = "1.10.3"
+regex = "1.12.3"
 reqwest = { version = "0.13.2", default-features = false, features = ["stream", "json", "blocking", "query", "native-tls"] }
 chrono = { version = "0.4", features = ["serde"] }
 bytes = "1"
 futures = "0.3"
 toml_edit = "0.22.9"
-flate2 = "1.0"
+flate2 = "1.1"
 tar = "0.4"
 rustpython-parser = "0.3.1"
 rustpython-ast = { version = "0.3.1", features = ["unparse"] }
-comfy-table = "7.1.1"
+comfy-table = "7.2.2"
 ratatui = "0.27.0"
 prometheus-parse = "0.2.5"
 crossterm = { version = "0.27.0", features = ["event-stream"] }
@@ -68,7 +68,7 @@ sha2 = "0.10.8"
 hex = "0.4.2"
 constant_time_eq = "0.3.0"
 
-tokio-stream = "0.1.16"
+tokio-stream = "0.1.18"
 redis = { version = "0.29.1", features = [
     "tokio-comp",
     "aio",
@@ -81,11 +81,11 @@ num-bigint = "0.4"
 async-trait = "0.1.83"
 protobuf = "3.7"
 petgraph = "0.8.1"
-serial_test = "3.1.1"
+serial_test = "3.4.0"
 logos = "0.15.0"
 
 # Monitoring
-tracing = "0.1.40"
+tracing = "0.1.44"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 opentelemetry = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb" }
 opentelemetry_sdk = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb", features = ["rt-tokio", "logs"] }
@@ -97,10 +97,10 @@ temporal-sdk-core = { git = "https://github.com/temporalio/sdk-core.git", rev = 
 temporal-sdk-core-protos = { git = "https://github.com/temporalio/sdk-core.git", rev = "b94b2fc172c2740705b3454a0e04b856fe426233" }
 prost-types = "0.13.0"
 tonic = { version = "0.12", features = ["transport", "prost", "codegen"] }
-tempfile = "3.15.0"
+tempfile = "3.27.0"
 prost-wkt-types = "0.6.0"
 globset = "0.4"
-schema-registry-client = "0.4.1"
+schema-registry-client = "0.4.2"
 
 keyring = { version = "3.6", features = ["apple-native", "linux-native"] }
 rmcp = { version = "0.16", features = ["server", "transport-streamable-http-server", "transport-io", "client", "transport-streamable-http-client-reqwest"] }
@@ -116,17 +116,17 @@ tokio-util = { version = "0.7", features = ["rt"] }
 
 [dev-dependencies]
 clickhouse = { version = "0.14.0", features = ["uuid", "test-util"] }
-assert_cmd = "2.0.12"
+assert_cmd = "2.2.2"
 assert_fs = "1.0.13"
-predicates = "3.0.4"
+predicates = "3.1.4"
 reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "json", "query", "native-tls"] }
-serial_test = "3.1.1"
+serial_test = "3.4.0"
 
 [build-dependencies]
 protobuf-codegen = "3.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
-regex = "1.10"
+regex = "1.12"
 walkdir = "2"
 
 [features]
