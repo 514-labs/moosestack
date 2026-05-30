@@ -29,7 +29,7 @@
     "@types/node": "catalog:",
     "axios": "catalog:",
     "chai": "catalog:",
-    "jose": "5.9.2",
+    "jose": "6.2.3",
     "js-yaml": "catalog:",
     "kafkajs": "2.2.4",
     "mocha": "catalog:",
