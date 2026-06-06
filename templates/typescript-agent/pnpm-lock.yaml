@@ -7,11 +7,11 @@ settings:
 catalogs:
   default:
     '@514labs/moose-cli':
-      specifier: 0.6.517
-      version: 0.6.517
+      specifier: 0.6.533
+      version: 0.6.533
     '@514labs/moose-lib':
-      specifier: 0.6.517
-      version: 0.6.517
+      specifier: 0.6.533
+      version: 0.6.533
     '@ai-sdk/amazon-bedrock':
       specifier: 4.0.83
       version: 4.0.83
@@ -370,7 +370,7 @@ importers:
     dependencies:
       '@514labs/moose-lib':
         specifier: 'catalog:'
-        version: 0.6.517(@modelcontextprotocol/sdk@1.26.0(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(tslib@2.8.1)(typia@9.7.2(@types/node@20.19.37)(typescript@5.9.3))
+        version: 0.6.533(@modelcontextprotocol/sdk@1.26.0(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(tslib@2.8.1)(typia@9.7.2(@types/node@20.19.37)(typescript@5.9.3))
       '@cfworker/json-schema':
         specifier: 'catalog:'
         version: 4.1.1
@@ -395,7 +395,7 @@ importers:
     devDependencies:
       '@514labs/moose-cli':
         specifier: 'catalog:'
-        version: 0.6.517
+        version: 0.6.533
       '@types/express':
         specifier: 'catalog:'
         version: 5.0.6
@@ -674,27 +674,27 @@ packages:
     resolution: {integrity: sha512-wE9zNdx39tcXOlMN4RGQEkuwGPUIJ+4xVQ4WRMFOjVN9Ixndat89jTUIBQSlCOc4B3RrRcn4VTz13pJo9tESMg==}
     engines: {node: '>=18.0.0'}
 
-  '@514labs/moose-cli-darwin-arm64@0.6.517':
-    resolution: {integrity: sha512-UIHna1K6D/t404e688OD624Hk6p0oJZ+wsZ5oyOf+p8YDAMBSYmpNA66sQaKxlLjyFAP1sqeQq2TArJi7hynNw==}
+  '@514labs/moose-cli-darwin-arm64@0.6.533':
+    resolution: {integrity: sha512-ClAdlZhuhuCmTsbm4QbaiUE93qsZ0Snihh9pX8/yaRMrcQL565GDsQ9WvQ1PBYMr7Xc/U/IDqyktY8V9iMUHbg==}
     cpu: [arm64]
     os: [darwin]
 
-  '@514labs/moose-cli-linux-arm64@0.6.517':
-    resolution: {integrity: sha512-O1flu4DS9DjD4E3YLqw6zEU5kyHTk5tvm6h1uQkZ7wn7UmCVQo1NKa4yDjz5pGdbKlhpzwRw10V6NGqn/7DU+g==}
+  '@514labs/moose-cli-linux-arm64@0.6.533':
+    resolution: {integrity: sha512-x+TGBMKjzO9t3OnHebmKuVgIum3oXIvRfJM5LYMd1GE4EfNeJ0w93hrX9eXg8T2kpNAXtyOV+E+5UfTr+g6KKg==}
     cpu: [arm64]
     os: [linux]
 
-  '@514labs/moose-cli-linux-x64@0.6.517':
-    resolution: {integrity: sha512-tvDms4hKzCI7wULoZ/GvKqniSUrmNrrObzflonGR/z+6F/O7gNI+3ilXinMzhe/7GeWaBg17jiMQ9HyZbWk4Uw==}
+  '@514labs/moose-cli-linux-x64@0.6.533':
+    resolution: {integrity: sha512-H/jacxraIiDnb9ovJCx6Mi+4HaJpqGDzo0I6moJhOvIIrwFMC84WDLWI70s+iL0zcx1s0/QTHnqv3184as2FEA==}
     cpu: [x64]
     os: [linux]
 
-  '@514labs/moose-cli@0.6.517':
-    resolution: {integrity: sha512-7XA9VckVMQJEKWihR26tvQnQ/eMDXrdKGgQwaLTY7pPUDvkQoEkoINJR4xJnxLGvwaXUH8q7PVFkZw2EtQVf/A==}
+  '@514labs/moose-cli@0.6.533':
+    resolution: {integrity: sha512-IQBTD3wO+NzfUFZMeQen10buMBWvopR5SbEAJh01deVXT5B9C90vljVieXprLdnEZkiMoGJUl318MdTFauXykA==}
     hasBin: true
 
-  '@514labs/moose-lib@0.6.517':
-    resolution: {integrity: sha512-8hhuR1evLmRaiV8a6zfzuIAJ6VnX5CZK/JqGDhoWRx9PDXuk3Vy8dWa6j+pvv9/jVfWlba/CPSMereByS74GvA==}
+  '@514labs/moose-lib@0.6.533':
+    resolution: {integrity: sha512-/WrmiGJL/lQrqpFOTIZSryOI8uHqDdwv8uVwSI+HaUlKFLvlrGgxLuvgB3Hy37/ybFZ5sHjEPnEhFQADeyxkgg==}
     engines: {node: '>=20 <25'}
     hasBin: true
     peerDependencies:
@@ -3516,6 +3516,7 @@ packages:
 
   '@ungap/structured-clone@1.3.0':
     resolution: {integrity: sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g==}
+    deprecated: Potential CWE-502 - Update to 1.3.1 or higher
 
   '@unrs/resolver-binding-android-arm-eabi@1.11.1':
     resolution: {integrity: sha512-ppLRUgHVaGRWUx0R0Ut06Mjo9gBaBkg3v/8AxusGLhsIotbBLuRk51rAzqLC8gq6NyyAojEXglNjzf6R948DNw==}
@@ -6170,6 +6171,7 @@ packages:
   recharts@2.15.4:
     resolution: {integrity: sha512-UT/q6fwS3c1dHbXv2uFgYJ9BMFHu3fwnd7AYZaEQhXuYQ4hgsxLvsUXzGdKeZrW5xopzDCvuA2N41WJ88I7zIw==}
     engines: {node: '>=14'}
+    deprecated: 1.x and 2.x branches are no longer active. Bump to Recharts v3 to receive latest features and bugfixes. See https://github.com/recharts/recharts/wiki/3.0-migration-guide
     peerDependencies:
       react: ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -7112,22 +7114,22 @@ snapshots:
       - encoding
       - supports-color
 
-  '@514labs/moose-cli-darwin-arm64@0.6.517':
+  '@514labs/moose-cli-darwin-arm64@0.6.533':
     optional: true
 
-  '@514labs/moose-cli-linux-arm64@0.6.517':
+  '@514labs/moose-cli-linux-arm64@0.6.533':
     optional: true
 
-  '@514labs/moose-cli-linux-x64@0.6.517':
+  '@514labs/moose-cli-linux-x64@0.6.533':
     optional: true
 
-  '@514labs/moose-cli@0.6.517':
+  '@514labs/moose-cli@0.6.533':
     optionalDependencies:
-      '@514labs/moose-cli-darwin-arm64': 0.6.517
-      '@514labs/moose-cli-linux-arm64': 0.6.517
-      '@514labs/moose-cli-linux-x64': 0.6.517
+      '@514labs/moose-cli-darwin-arm64': 0.6.533
+      '@514labs/moose-cli-linux-arm64': 0.6.533
+      '@514labs/moose-cli-linux-x64': 0.6.533
 
-  '@514labs/moose-lib@0.6.517(@modelcontextprotocol/sdk@1.26.0(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(tslib@2.8.1)(typia@9.7.2(@types/node@20.19.37)(typescript@5.9.3))':
+  '@514labs/moose-lib@0.6.533(@modelcontextprotocol/sdk@1.26.0(@cfworker/json-schema@4.1.1)(zod@3.25.76))(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(tslib@2.8.1)(typia@9.7.2(@types/node@20.19.37)(typescript@5.9.3))':
     dependencies:
       '@514labs/kafka-javascript': 1.7.1-patch
       '@clickhouse/client': 1.8.1
@@ -11384,8 +11386,8 @@ snapshots:
       '@next/eslint-plugin-next': 16.1.6
       eslint: 9.39.4(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.39.4(jiti@2.6.1))
       eslint-plugin-react: 7.37.5(eslint@9.39.4(jiti@2.6.1))
       eslint-plugin-react-hooks: 7.0.1(eslint@9.39.4(jiti@2.6.1))
@@ -11407,7 +11409,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)):
+  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@2.6.1)):
     dependencies:
       '@nolyfill/is-core-module': 1.0.39
       debug: 4.4.3
@@ -11418,22 +11420,22 @@ snapshots:
       tinyglobby: 0.2.15
       unrs-resolver: 1.11.1
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)):
+  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1)):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
       '@typescript-eslint/parser': 8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
       eslint: 9.39.4(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@2.6.1))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
@@ -11444,7 +11446,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 9.39.4(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
-      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
+      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.54.0(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1))
       hasown: 2.0.2
       is-core-module: 2.16.1
       is-glob: 4.0.3
