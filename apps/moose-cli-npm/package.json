@@ -27,9 +27,9 @@
     "typescript": "^5.7.0"
   },
   "optionalDependencies": {
-    "@514labs/moose-cli-darwin-arm64": "0.3.205",
-    "@514labs/moose-cli-darwin-x64": "0.3.205",
-    "@514labs/moose-cli-linux-arm64": "0.3.205",
-    "@514labs/moose-cli-linux-x64": "0.3.205"
+    "@514labs/moose-cli-darwin-arm64": "0.6.533",
+    "@514labs/moose-cli-darwin-x64": "0.6.171",
+    "@514labs/moose-cli-linux-arm64": "0.6.533",
+    "@514labs/moose-cli-linux-x64": "0.6.533"
   }
 }

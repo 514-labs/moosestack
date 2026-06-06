@@ -78,9 +78,9 @@
     "@eslint/js": "9.39.2",
     "@repo/ts-config": "workspace:^",
     "@types/node": "catalog:",
-    "@types/vscode": "^1.90.0",
+    "@types/vscode": "^1.120.0",
     "eslint": "catalog:",
     "typescript": "catalog:",
-    "typescript-eslint": "8.55.0"
+    "typescript-eslint": "8.60.1"
   }
 }
