@@ -6,6 +6,21 @@
 [![Docs](https://img.shields.io/badge/Quickstart-Docs-blue.svg)](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
 [![MIT license](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+> [!IMPORTANT]
+> MooseStack has reached end of life and is no longer actively maintained.
+
+As users, we loved the idea of the MooseStack harness. But as coding agents became our primary users over the last couple of years, results from the [Agent Experience Platform (AXP)](https://www.514.ai/preview) made it clear that they would rather free solo on the underlying tools than use our product. We cannot in good faith keep building tools that make their work harder. Thank you to everyone who supported MooseStack and helped us test the idea. You can learn more about AXP in the [docs](https://docs.514.ai/).
+
+![MooseStack EOL Image](./eol-meme.png)
+
+| Scenario | AX without Moose | AX with Moose |
+| --- | ---: | ---: |
+| Create analytics table | 1.00 score / 1m51s / $0.24 | 1.00 score / 2m32s / $0.35 |
+| CSV ingest | 1.00 score / 2m03s / $0.45 | 1.00 score / 2m41s / $0.43 |
+| MV access patterns | 0.53 score / 2m36s / $0.44 | 1.00 score / 5m09s / $0.94 |
+| Ingest to API | 0.97 score / 3m08s / $0.62 | 0.23 score / 8m49s / $2.13 |
+| Full OLAP pipeline | 1.00 score / 4m33s / $0.84 | 0.17 score / 11m31s / $2.12 |
+
 # MooseStack
 
 **The developer agent harness for ClickHouse** — MooseStack gives your AI coding agents the interfaces, context, code, and skills to build and ship applications on popular OSS realtime analytical infrastructure: safely, efficiently, and effectively. Including:
