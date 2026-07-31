@@ -1,6 +1,6 @@
 <a href="https://docs.fiveonefour.com/moosestack/"><img src="https://raw.githubusercontent.com/514-labs/moose/main/logo-m-light.png" alt="moose logo" height="100px"></a>
 
-[![Made by Fiveonefour](https://img.shields.io/badge/MADE%20BY-Fiveonefour-black.svg)](https://www.fiveonefour.com)
+[![Made by Fiveonefour](https://img.shields.io/badge/MADE%20BY-Fiveonefour-black.svg)](https://www.514.ax)
 [![NPM Version](https://img.shields.io/npm/v/%40514labs%2Fmoose-cli?logo=npm)](https://www.npmjs.com/package/@514labs/moose-cli?activeTab=readme)
 [![MooseStack Community](https://img.shields.io/badge/Slack-MooseStack_community-purple.svg?logo=slack)](http://slack.moosestack.com)
 [![Docs](https://img.shields.io/badge/Quickstart-Docs-blue.svg)](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
@@ -9,7 +9,7 @@
 > [!IMPORTANT]
 > MooseStack has reached end of life and is no longer actively maintained.
 
-As users, we loved the idea of the MooseStack harness. But as coding agents became our primary users over the last couple of years, results from the [Agent Experience Platform (AXP)](https://www.514.ai/preview) made it clear that they would rather free solo on the underlying tools than use our product. We cannot in good faith keep building tools that make their work harder. Thank you to everyone who supported MooseStack and helped us test the idea. You can learn more about AXP in the [docs](https://docs.514.ai/).
+As users, we loved the idea of the MooseStack harness. But as coding agents became our primary users over the last couple of years, results from the [Agent Experience Platform](https://www.514.ax) made it clear that they would rather free solo on the underlying tools than use our product. We cannot in good faith keep building tools that make their work harder. Thank you to everyone who supported MooseStack and helped us test the idea. You can learn more in the [docs](https://docs.514.ax).
 
 ![MooseStack EOL Image](./eol-meme.png)
 
@@ -71,9 +71,7 @@ In short, when everything is code, coding agents can thrive.
 ## Deploy to Production
 ### Fiveonefour hosting
 
-The fastest way to deploy your MooseStack application is with [hosting from Fiveonefour](https://fiveonefour.boreal.cloud/sign-up), the creators of MooseStack. Fiveonefour provides automated preview branches, managed schema migrations, deep integration with GitHub and CI/CD, and an agentic harness for your realtime analytical infrastructure in the cloud.
-
-[Get started with Fiveonefour hosting →](https://fiveonefour.boreal.cloud/sign-up)
+Managed MooseStack hosting from Fiveonefour is no longer available. To see what the team is building now, visit [514.ax](https://www.514.ax).
 
 ### Deploy Yourself
 
